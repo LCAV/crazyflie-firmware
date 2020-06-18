@@ -102,6 +102,7 @@
 #define AI_DECK_TASK_PRI        3
 #define UART2_TASK_PRI          3
 
+#define AUDIO_TASK_PRI			1
 // Not compiled
 #if 0
   #define INFO_TASK_PRI           2
@@ -149,6 +150,8 @@
 #define AI_DECK_NINA_TASK_NAME  "AI-DECK-NINA"
 #define UART2_TASK_NAME         "UART2"
 
+#define AUDIO_TASK_NAME			"AUDIO"
+
 //Task stack sizes
 #define SYSTEM_TASK_STACKSIZE         (2* configMINIMAL_STACK_SIZE)
 #define ADC_TASK_STACKSIZE            configMINIMAL_STACK_SIZE
@@ -179,6 +182,8 @@
 #define ACTIVEMARKER_TASK_STACKSIZE   configMINIMAL_STACK_SIZE
 #define AI_DECK_TASK_STACKSIZE        configMINIMAL_STACK_SIZE
 #define UART2_TASK_STACKSIZE          configMINIMAL_STACK_SIZE
+
+#define AUDIO_TASK_STACKSIZE		  configMINIMAL_STACK_SIZE
 
 //The radio channel. From 0 to 125
 #define RADIO_CHANNEL 80
