@@ -12,6 +12,7 @@
 #include "debug.h"
 #include "deck.h"
 #include "deck_spi.h"
+#include "log.h"
 
 #include "audio_deck.h"
 
@@ -93,13 +94,13 @@ void audio_deckTask(void* arg){
   systemWaitStart();
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
-
+  uint8_t send_byte = 0xFF;
   while (1) {
-    vTaskDelayUntil(&xLastWakeTime, M2T(500));
+    vTaskDelayUntil(&xLastWakeTime, M2T(200));
     csLow();
-    read_byte = xchgSpi(0xFF);
+    read_byte = xchgSpi(send_byte--);
     csHigh();
-    DEBUG_PRINT("button : %d \n", read_byte);
+    //DEBUG_PRINT("button : %d \n", read_byte);
 
   }
 }
@@ -114,3 +115,8 @@ static const DeckDriver audio_deck = {
 };
 
 DECK_DRIVER(audio_deck);
+
+LOG_GROUP_START(audio)
+LOG_ADD(LOG_UINT8,spi_byte,&read_byte)
+LOG_GROUP_STOP(audio)
+
