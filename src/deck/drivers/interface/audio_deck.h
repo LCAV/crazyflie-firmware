@@ -3,7 +3,7 @@
 
 #include "deck_core.h"
 
-void audio_deckInit(void);
+void audio_deckInit(DeckInfo* info);
 
 bool audio_deckTest(void);
 void audio_deckTask(void* arg);
