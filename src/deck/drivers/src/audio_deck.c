@@ -23,8 +23,8 @@
 #define AUDIO_DECK_ADDRESS 47
 #define CRTP_MAX_PAYLOAD 29
 #define FFT_SIZE 32
-#define nMic 4
-#define ARRAY_SIZE nMic*nMic*FFT_SIZE*4*2
+#define N_MICS 4
+#define ARRAY_SIZE N_MICS*FFT_SIZE*4*2
 #define NPACKETS (int)ARRAY_SIZE/CRTP_MAX_PAYLOAD
 
 static BYTE corr_array[ARRAY_SIZE];
@@ -48,22 +48,11 @@ void con_64_bit_to_8_bit_array(uint64_t data, uint8_t array[]){
 	}
 }
 
-
-void send_start_packet(){
-	CRTPPacket trans_p;
-	trans_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, 1);
-	trans_p.size = 1;
-	trans_p.data[0]=0;
-	crtpSendPacket(&trans_p);
-	corr_matrix_sending = 1;
-}
-
-
-void send_corr_packet(){
+void send_corr_packet(uint8_t channel){
 	static uint8_t packet_count = 0;
 
 	static CRTPPacket corr_array_p;
-	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, 0);
+	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
 	corr_array_p.size = CRTP_MAX_PAYLOAD;
 
 	if (packet_count == NPACKETS){
@@ -107,10 +96,11 @@ void audio_deckTask(void* arg){
     vTaskDelayUntil(&xLastWakeTime, F2T(100));
     if (!corr_matrix_sending){
     	i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, ARRAY_SIZE, corr_array);
-    	send_start_packet();
+    	send_corr_packet(1);
+    	corr_matrix_sending = 1;
     }
     else{
-    	send_corr_packet();
+    	send_corr_packet(0);
     }
   }
 }
