@@ -102,7 +102,7 @@
 #define AI_DECK_TASK_PRI        3
 #define UART2_TASK_PRI          3
 
-#define AUDIO_TASK_PRI			2
+#define AUDIO_TASK_PRI			1
 // Not compiled
 #if 0
   #define INFO_TASK_PRI           2
