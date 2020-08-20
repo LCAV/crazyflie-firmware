@@ -33,9 +33,10 @@
 
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 
-static BYTE corr_array_sent[ARRAY_SIZE];     // buffer to be sent through CRTP after averaging
-static BYTE corr_array_received[ARRAY_SIZE]; // buffer where I2C data is received
-static float corr_array_averaged[N_MICS*FFTSIZE*2] // buffer where I2C data is averaged
+static BYTE byte_array_CRTP[ARRAY_SIZE];     // buffer to be sent through CRTP after averaging
+static BYTE byte_array_received[ARRAY_SIZE]; // buffer where I2C data is received
+static float float_array_averaged[N_MICS*FFTSIZE*2]; // buffer where I2C data is averaged
+static float float_array_buffer[N_MICS*FFTSIZE*2];   // buffer where I2C data is converted to float
 
 static bool isInit;
 
@@ -61,7 +62,7 @@ void float_to_byte_array(float input, uint8_t output[]){
 
 void fillbuffer(uint8_t buffer[],uint8_t packet_count, uint8_t size){
 	for(uint8_t i = 0; i<size; i++)
-		buffer[i]=corr_array_sent[packet_count*CRTP_MAX_PAYLOAD+i];
+		buffer[i]=byte_array_CRTP[packet_count*CRTP_MAX_PAYLOAD+i];
 }
 
 void byte_array_to_float_array(float float_array[],uint8_t byte_array[]){
@@ -76,9 +77,19 @@ void float_array_to_byte_array(float float_array[],uint8_t byte_array[]){
   }
 }
 
+void add_divided_array_to_buffer(float array_to_divide[],float buffer[]){
+  for (int i = 0; i<FFTSIZE*nMic*2; i++){
+    buffer[i]+=array_to_divide[i]/M;
+  }
+}
+
+void erase_buffer(buffer[],int buffer_size){
+  for (int i = 0; i<buffer_size; i++){
+    buffer[i] = 0;
+  }
+}
+
 void send_corr_packet(uint8_t channel){
-
-
 	static CRTPPacket corr_array_p;
 	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
 	corr_array_p.size = CRTP_MAX_PAYLOAD;
@@ -94,12 +105,12 @@ void send_corr_packet(uint8_t channel){
 		crtpSendPacket(&corr_array_p);
 		packet_count++;
 	}
-
 }
-void receive_audio_deck_array(){
-      i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, ARRAY_SIZE, corr_array_received); // get array from deck
-      byte_array_to_float_array()
 
+void receive_audio_deck_array(){
+      i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, ARRAY_SIZE, byte_array_received); // get array from deck
+      byte_array_to_float_array(float_array_buffer,byte_array_received);
+      add_divided_array_to_buffer(float_array_buffer,float_array_averaged);
 }
 
 void audio_deckInit(DeckInfo* info){ // deck initialisation
@@ -129,6 +140,8 @@ void audio_deckTask(void* arg){ // main task
       receive_audio_deck_array();
     }
     if (!corr_matrix_sending){
+      float_array_to_byte_array(float_array_averaged,byte_array_CRTP);
+      erase_buffer(float_array_averaged,FFTSIZE*nMic*2);
     	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
     	corr_matrix_sending = 1;
     }
