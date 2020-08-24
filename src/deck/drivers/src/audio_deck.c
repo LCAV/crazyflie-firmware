@@ -30,15 +30,16 @@
 #define BYTE_ARRAY_SIZE FLOAT_ARRAY_SIZE*FLOAT_PRECISION
 #define N_FULL_PACKETS (int)BYTE_ARRAY_SIZE/CRTP_MAX_PAYLOAD
 #define N_PACKETS N_FULL_PACKETS + 1
-#define M 1// number of arrays averaged 
-#define USE_IIR 0
-#define IIR_ALPHA 0.5
+#define I2C_REQUEST_RATE 6 // I2C is requested each 6 cycles of main task i.e. 60 ms = 6/100Hz
+#define M 4 // number of arrays averaged, maximum is 6 as 6*6 = 36 = N_PACKETS
+#define USE_IIR 0 // put to one to use exp filter instead of averaging through M buffers
+#define IIR_ALPHA 0.5f
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 
 static BYTE byte_array_CRTP[BYTE_ARRAY_SIZE];     // buffer to be sent through CRTP after averaging
 static BYTE byte_array_received[BYTE_ARRAY_SIZE]; // buffer where I2C data is received
-static float float_array_averaged[N_MICS*FFTSIZE*2]; // buffer where I2C data is averaged
-static float float_array_buffer[N_MICS*FFTSIZE*2];   // buffer where I2C data is converted to float
+static float float_array_averaged[FLOAT_ARRAY_SIZE]; // buffer where I2C data is averaged
+static float float_array_buffer[FLOAT_ARRAY_SIZE];   // buffer where I2C data is converted to float
 
 static bool isInit;
 
@@ -68,21 +69,21 @@ void fillbuffer(uint8_t buffer[],uint8_t packet_count, uint8_t size){
 }
 
 void byte_array_to_float_array(float float_array[],uint8_t byte_array[]){
-  for (int i = 0; i<FFTSIZE*N_MICS*2; i++){
+  for (int i = 0; i<FLOAT_ARRAY_SIZE; i++){
     byte_array_to_float(&byte_array[i*FLOAT_PRECISION],&float_array[i]);
   }
 }
 
 void float_array_to_byte_array(float float_array[],uint8_t byte_array[]){
-  for (int i = 0; i<FFTSIZE*N_MICS*2; i++){
+  for (int i = 0; i<FLOAT_ARRAY_SIZE; i++){
     float_to_byte_array(float_array[i],&byte_array[i*FLOAT_PRECISION]);
   }
 }
 
 void add_divided_array_to_buffer(float array_to_divide[],float buffer[]){
-  for (int i = 0; i<FFTSIZE*N_MICS*2; i++){
-    //buffer[i]+=array_to_divide[i]/M;
-    buffer[i]=array_to_divide[i];
+  for (int i = 0; i<FLOAT_ARRAY_SIZE; i++){
+    buffer[i]+=array_to_divide[i]/M;
+    //buffer[i]=array_to_divide[i];
   }
 }
 void exp_filter(float incoming_buffer[],float buffer[]){
@@ -115,7 +116,9 @@ void send_corr_packet(uint8_t channel){
 }
 
 void receive_audio_deck_array(){
-  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received); // get array from deck
+  uint8_t dummy;
+  dummy = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
+  DEBUG_PRINT("%d \n",dummy); // get array from deck
   byte_array_to_float_array(float_array_buffer,byte_array_received);
   if (!USE_IIR){
     add_divided_array_to_buffer(float_array_buffer,float_array_averaged);  
@@ -148,17 +151,18 @@ void audio_deckTask(void* arg){ // main task
   xLastWakeTime = xTaskGetTickCount();
   if (USE_IIR){
     i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received); // get array from deck
-    byte_array_to_float_array(float_array_averaged,byte_array_received);
+    byte_array_to_float_aray(float_array_averaged,byte_array_received);
   }
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-    if (packet_count >= N_PACKETS-M || USE_IIR){ // we average M arrays before sending
+    if ((packet_count >= N_PACKETS-I2C_REQUEST_RATE*M || USE_IIR) && packet_count%I2C_REQUEST_RATE == 0){
+      // we average M arrays before sending or use exp filter, must be separated with I2C_REQUEST_RATE cycles
       receive_audio_deck_array();
     }
     if (!corr_matrix_sending){
       float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
       if(!USE_IIR){
-        erase_buffer(float_array_averaged,FFTSIZE*N_MICS*2);
+        erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
       }
     	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
     	corr_matrix_sending = 1;
