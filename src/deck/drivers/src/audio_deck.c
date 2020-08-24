@@ -30,8 +30,9 @@
 #define BYTE_ARRAY_SIZE FLOAT_ARRAY_SIZE*FLOAT_PRECISION
 #define N_FULL_PACKETS (int)BYTE_ARRAY_SIZE/CRTP_MAX_PAYLOAD
 #define N_PACKETS N_FULL_PACKETS + 1
-#define M 2// number of arrays averaged 
-
+#define M 1// number of arrays averaged 
+#define USE_IIR 0
+#define IIR_ALPHA 0.5
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 
 static BYTE byte_array_CRTP[BYTE_ARRAY_SIZE];     // buffer to be sent through CRTP after averaging
@@ -80,10 +81,15 @@ void float_array_to_byte_array(float float_array[],uint8_t byte_array[]){
 
 void add_divided_array_to_buffer(float array_to_divide[],float buffer[]){
   for (int i = 0; i<FFTSIZE*N_MICS*2; i++){
-    buffer[i]+=array_to_divide[i]/M;
+    //buffer[i]+=array_to_divide[i]/M;
+    buffer[i]=array_to_divide[i];
   }
 }
-
+void exp_filter(float incoming_buffer[],float buffer[]){
+  for (int i = 0; i<FFTSIZE*N_MICS*2; i++){
+    buffer[i]=buffer[i]*(1.0f-IIR_ALPHA)+incoming_buffer[i]*IIR_ALPHA;
+  }
+}
 void erase_buffer(float buffer[],int buffer_size){
   for (int i = 0; i<buffer_size; i++){
     buffer[i] = 0;
@@ -109,9 +115,14 @@ void send_corr_packet(uint8_t channel){
 }
 
 void receive_audio_deck_array(){
-      i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received); // get array from deck
-      byte_array_to_float_array(float_array_buffer,byte_array_received);
-      add_divided_array_to_buffer(float_array_buffer,float_array_averaged);
+  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received); // get array from deck
+  byte_array_to_float_array(float_array_buffer,byte_array_received);
+  if (!USE_IIR){
+    add_divided_array_to_buffer(float_array_buffer,float_array_averaged);  
+  }
+  else{
+    exp_filter(float_array_buffer,float_array_averaged); 
+  }     
 }
 
 void audio_deckInit(DeckInfo* info){ // deck initialisation
@@ -135,14 +146,20 @@ void audio_deckTask(void* arg){ // main task
   systemWaitStart();
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
+  if (USE_IIR){
+    i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received); // get array from deck
+    byte_array_to_float_array(float_array_averaged,byte_array_received);
+  }
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-    if (packet_count >= N_PACKETS-M){ // we average M arrays before sending
+    if (packet_count >= N_PACKETS-M || USE_IIR){ // we average M arrays before sending
       receive_audio_deck_array();
     }
     if (!corr_matrix_sending){
       float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
-      erase_buffer(float_array_averaged,FFTSIZE*N_MICS*2);
+      if(!USE_IIR){
+        erase_buffer(float_array_averaged,FFTSIZE*N_MICS*2);
+      }
     	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
     	corr_matrix_sending = 1;
     }
