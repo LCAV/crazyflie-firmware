@@ -12,7 +12,7 @@
 #include "debug.h"
 #include "deck.h"
 #include "i2cdev.h"
-#include "log.h"
+#include "param.h"
 #include "crtp.h"
 #include "usec_time.h"
 #include "power_distribution.h"
@@ -48,6 +48,8 @@ static bool isInit;
 
 static bool corr_matrix_sending = 0;
 static uint8_t packet_count = 0;
+
+static uint8_t send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
 
 ////////////////////////////////////// AUDIO DECK FUNCTIONS /////////////////////////////////
 
@@ -101,21 +103,23 @@ void erase_buffer(float buffer[],int buffer_size){
 }
 
 void send_corr_packet(uint8_t channel){
-	static CRTPPacket corr_array_p;
-	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
-	corr_array_p.size = CRTP_MAX_PAYLOAD;
+  if(send_audio_enable){
+  	static CRTPPacket corr_array_p;
+  	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
+  	corr_array_p.size = CRTP_MAX_PAYLOAD;
 
-	if (packet_count == N_FULL_PACKETS){ 	// send last packet and reset counter
-		fillbuffer(corr_array_p.data,packet_count,BYTE_ARRAY_SIZE%CRTP_MAX_PAYLOAD);
-		crtpSendPacket(&corr_array_p);
-		corr_matrix_sending = 0;
-		packet_count = 0;
-	}
-	else{  // send packet
-		fillbuffer(corr_array_p.data,packet_count,CRTP_MAX_PAYLOAD);
-		crtpSendPacket(&corr_array_p);
-		packet_count++;
-	}
+  	if (packet_count == N_FULL_PACKETS){ 	// send last packet and reset counter
+  		fillbuffer(corr_array_p.data,packet_count,BYTE_ARRAY_SIZE%CRTP_MAX_PAYLOAD);
+  		crtpSendPacket(&corr_array_p);
+  		corr_matrix_sending = 0;
+  		packet_count = 0;
+  	}
+  	else{  // send packet
+  		fillbuffer(corr_array_p.data,packet_count,CRTP_MAX_PAYLOAD);
+  		crtpSendPacket(&corr_array_p);
+  		packet_count++;
+  	}
+  }
 }
 
 void receive_audio_deck_array(){
@@ -186,7 +190,6 @@ void audio_deckTask(void* arg){ // main task
   }
 }
 
-
 static const DeckDriver audio_deck = {
     .name = "audio_deck",
     .usedGpio = DECK_USING_SDA|DECK_USING_SCL,
@@ -196,4 +199,6 @@ static const DeckDriver audio_deck = {
 
 DECK_DRIVER(audio_deck);
 
-
+PARAM_GROUP_START(audio)
+PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
+PARAM_GROUP_STOP(audio)
