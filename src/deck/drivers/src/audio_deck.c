@@ -123,9 +123,11 @@ void send_corr_packet(uint8_t channel){
 }
 
 void receive_audio_deck_array(){
-  uint8_t dummy;
-  dummy = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
-  DEBUG_PRINT("%d \n",dummy); // get array from deck
+  // get array from deck
+  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
+  // uint8_t dummy;
+  // dummy = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
+  // DEBUG_PRINT("%d \n",dummy);
   byte_array_to_float_array(float_array_buffer,byte_array_received);
   if (!USE_IIR){
     add_divided_array_to_buffer(float_array_buffer,float_array_averaged);  
