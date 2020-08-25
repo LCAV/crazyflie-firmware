@@ -15,6 +15,7 @@
 #include "log.h"
 #include "crtp.h"
 #include "usec_time.h"
+#include "power_distribution.h"
 
 #include "audio_deck.h"
 
@@ -127,7 +128,10 @@ void receive_audio_deck_array(){
     exp_filter(float_array_buffer,float_array_averaged); 
   }     
 }
-
+void send_motorPower(){
+    uint32_t motorPower_array[4];
+    motorPower_array = get_motor_power();
+}
 void audio_deckInit(DeckInfo* info){ // deck initialisation
   if (isInit)
     return;
@@ -155,21 +159,23 @@ void audio_deckTask(void* arg){ // main task
   }
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-    if ((packet_count >= N_PACKETS-I2C_REQUEST_RATE*M || USE_IIR) && packet_count%I2C_REQUEST_RATE == 0){
-      // we average M arrays before sending or use exp filter, must be separated with I2C_REQUEST_RATE cycles
-      receive_audio_deck_array();
-    }
-    if (!corr_matrix_sending){
-      float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
-      if(!USE_IIR){
-        erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
-      }
-    	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
-    	corr_matrix_sending = 1;
-    }
-    else{
-    	send_corr_packet(0);
-    }
+
+//    if ((packet_count >= N_PACKETS-I2C_REQUEST_RATE*M || USE_IIR) && packet_count%I2C_REQUEST_RATE == 0){
+//      // we average M arrays before sending or use exp filter, must be separated with I2C_REQUEST_RATE cycles
+//      receive_audio_deck_array();
+//    }
+//    if (!corr_matrix_sending){
+//      float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
+//      if(!USE_IIR){
+//        erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
+//      }
+//    	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
+//    	corr_matrix_sending = 1;
+//    }
+//    else{
+//    	send_corr_packet(0);
+//    }
+    get_
   }
 }
 

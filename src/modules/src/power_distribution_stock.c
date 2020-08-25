@@ -110,7 +110,14 @@ void powerDistribution(const control_t *control)
     motorsSetRatio(MOTOR_M4, motorPower.m4);
   }
 }
-
+uint32_t * get_motor_power(void){
+    uint32_t motorPower_array[4];
+    motorPower_array[0] = motorPower.m1;
+    motorPower_array[1] = motorPower.m2;
+    motorPower_array[2] = motorPower.m3:
+    motorPower_array[3] = motorPower.m4;
+    return motorPower_array;
+}
 PARAM_GROUP_START(motorPowerSet)
 PARAM_ADD(PARAM_UINT8, enable, &motorSetEnable)
 PARAM_ADD(PARAM_UINT16, m1, &motorPowerSet.m1)
