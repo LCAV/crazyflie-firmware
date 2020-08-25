@@ -35,6 +35,8 @@
 #define M 4 // number of arrays averaged, maximum is 6 as 6*6 = 36 = N_PACKETS
 #define USE_IIR 0 // put to one to use exp filter instead of averaging through M buffers
 #define IIR_ALPHA 0.5f
+#define N_MOTORS 4
+#define INT16_PRECISION 2 // int32 = 2 bytes
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 
 static BYTE byte_array_CRTP[BYTE_ARRAY_SIZE];     // buffer to be sent through CRTP after averaging
@@ -128,10 +130,14 @@ void receive_audio_deck_array(){
     exp_filter(float_array_buffer,float_array_averaged); 
   }     
 }
+
 void send_motorPower(){
-    uint32_t motorPower_array[4];
-    motorPower_array = get_motor_power();
+    uint16_t *motorPower_p;
+    motorPower_p = get_motor_power();
+    uint8_t *motorPower_byte_p = (uint8_t*)motorPower_p;
+    i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS,N_MOTORS*INT16_PRECISION, motorPower_byte_p);
 }
+
 void audio_deckInit(DeckInfo* info){ // deck initialisation
   if (isInit)
     return;
@@ -155,30 +161,30 @@ void audio_deckTask(void* arg){ // main task
   xLastWakeTime = xTaskGetTickCount();
   if (USE_IIR){
     i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received); // get array from deck
-    byte_array_to_float_aray(float_array_averaged,byte_array_received);
+    byte_array_to_float_array(float_array_averaged,byte_array_received);
   }
   while (1) {
     vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-
-//    if ((packet_count >= N_PACKETS-I2C_REQUEST_RATE*M || USE_IIR) && packet_count%I2C_REQUEST_RATE == 0){
-//      // we average M arrays before sending or use exp filter, must be separated with I2C_REQUEST_RATE cycles
-//      receive_audio_deck_array();
-//    }
-//    if (!corr_matrix_sending){
-//      float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
-//      if(!USE_IIR){
-//        erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
-//      }
-//    	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
-//    	corr_matrix_sending = 1;
-//    }
-//    else{
-//    	send_corr_packet(0);
-//    }
-    get_
+    if (packet_count%I2C_REQUEST_RATE == 0){
+      if(packet_count >= N_PACKETS-I2C_REQUEST_RATE*M || USE_IIR){
+        // we average M arrays before sending or use exp filter, must be separated with I2C_REQUEST_RATE cycles
+        receive_audio_deck_array();
+      }
+    }
+   if (!corr_matrix_sending){
+      float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
+      if(!USE_IIR){
+      erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
+     }
+   	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
+   	corr_matrix_sending = 1;
+   }
+   else{
+    send_motorPower(); // send thrust to the audio deck with I2C
+   	send_corr_packet(0);
+   }
   }
 }
-
 
 
 static const DeckDriver audio_deck = {

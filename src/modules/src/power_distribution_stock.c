@@ -42,7 +42,7 @@ static struct {
   uint32_t m2;
   uint32_t m3;
   uint32_t m4;
-} motorPower;
+} motorPower;  // Comment from Isaac : I think it should be uint16_t 
 
 static struct {
   uint16_t m1;
@@ -97,7 +97,7 @@ void powerDistribution(const control_t *control)
 
   if (motorSetEnable)
   {
-    motorsSetRatio(MOTOR_M1, motorPowerSet.m1);
+    motorsSetRatio(MOTOR_M1, motorPowerSet.m1); 
     motorsSetRatio(MOTOR_M2, motorPowerSet.m2);
     motorsSetRatio(MOTOR_M3, motorPowerSet.m3);
     motorsSetRatio(MOTOR_M4, motorPowerSet.m4);
@@ -110,11 +110,11 @@ void powerDistribution(const control_t *control)
     motorsSetRatio(MOTOR_M4, motorPower.m4);
   }
 }
-uint32_t * get_motor_power(void){
-    uint32_t motorPower_array[4];
+uint16_t * get_motor_power(void){
+    static uint16_t motorPower_array[4];
     motorPower_array[0] = motorPower.m1;
     motorPower_array[1] = motorPower.m2;
-    motorPower_array[2] = motorPower.m3:
+    motorPower_array[2] = motorPower.m3;
     motorPower_array[3] = motorPower.m4;
     return motorPower_array;
 }

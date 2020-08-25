@@ -32,6 +32,6 @@ void powerDistributionInit(void);
 bool powerDistributionTest(void);
 void powerDistribution(const control_t *control);
 void powerStop();
-uint32_t * get_motor_power(void);
+uint16_t * get_motor_power(void);
 
 #endif //__POWER_DISTRIBUTION_H__
