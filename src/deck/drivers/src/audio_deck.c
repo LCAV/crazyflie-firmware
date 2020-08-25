@@ -46,7 +46,7 @@ static float float_array_buffer[FLOAT_ARRAY_SIZE];   // buffer where I2C data is
 
 static bool isInit;
 
-static bool corr_matrix_sending = 0;
+static bool array_sending = 0;
 static uint8_t packet_count = 0;
 
 static uint8_t send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
@@ -102,7 +102,7 @@ void erase_buffer(float buffer[],int buffer_size){
   }
 }
 
-void send_corr_packet(uint8_t channel){
+void send_array_packet(uint8_t channel){
   if(send_audio_enable){
   	static CRTPPacket corr_array_p;
   	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
@@ -111,7 +111,7 @@ void send_corr_packet(uint8_t channel){
   	if (packet_count == N_FULL_PACKETS){ 	// send last packet and reset counter
   		fillbuffer(corr_array_p.data,packet_count,BYTE_ARRAY_SIZE%CRTP_MAX_PAYLOAD);
   		crtpSendPacket(&corr_array_p);
-  		corr_matrix_sending = 0;
+  		array_sending = 0;
   		packet_count = 0;
   	}
   	else{  // send packet
@@ -124,10 +124,11 @@ void send_corr_packet(uint8_t channel){
 
 void receive_audio_deck_array(){
   // get array from deck
-  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
-  // uint8_t dummy;
-  // dummy = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
-  // DEBUG_PRINT("%d \n",dummy);
+  uint8_t dummy;
+  dummy = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, BYTE_ARRAY_SIZE, byte_array_received);
+  if (!dummy) {
+      DEBUG_PRINT("Warning: i2cdevRead in receive_audio_deck_array failed.");
+  }
   byte_array_to_float_array(float_array_buffer,byte_array_received);
   if (!USE_IIR){
     add_divided_array_to_buffer(float_array_buffer,float_array_averaged);  
@@ -177,17 +178,17 @@ void audio_deckTask(void* arg){ // main task
         receive_audio_deck_array();
       }
     }
-   if (!corr_matrix_sending){
+   if (!array_sending){
       float_array_to_byte_array(float_array_averaged,byte_array_CRTP); // transfer the averaged array to the buffer to be sent
       if(!USE_IIR){
       erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
      }
-   	send_corr_packet(1); // first packet is sent in channel 1 (start condition)
-   	corr_matrix_sending = 1;
+	send_motorPower(); // send thrust to the audio deck with I2C
+   	send_array_packet(1); // first packet is sent in channel 1 (start condition)
+   	array_sending = 1;
    }
    else{
-    send_motorPower(); // send thrust to the audio deck with I2C
-   	send_corr_packet(0);
+   	send_array_packet(0);
    }
   }
 }
