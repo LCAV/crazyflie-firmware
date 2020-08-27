@@ -131,13 +131,14 @@ void erase_buffer(float buffer[],int buffer_size){
   }
 }
 
+
 void copy_buffer(uint16_t input[],uint16_t output[],uint8_t buffer_size){
   for (uint8_t i = 0; i<buffer_size; i++){
     output[i] = input[i];
   }
 }
 
-void send_corr_packet(uint8_t channel){
+void send_array_packet(uint8_t channel){
   if(send_audio_enable){
   	static CRTPPacket corr_array_p;
   	corr_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
@@ -242,7 +243,7 @@ void audio_deckTask(void* arg){ // main task
       if(!USE_IIR){
         erase_buffer(float_array_averaged,FLOAT_ARRAY_SIZE);
       }
-   	  send_corr_packet(1); // first packet is sent in channel 1 (start condition)
+   	  send_array_packet(1); // first packet is sent in channel 1 (start condition)
       send_param_I2C(); // send parameters to the audio deck with I2C
       state = SEND_AUDIO_PACKET;
     }
@@ -251,7 +252,7 @@ void audio_deckTask(void* arg){ // main task
         // we average M arrays before sending or use exp filter, must be separated with I2C_REQUEST_RATE cycles
         receive_audio_deck_array();
       }
-   	  send_corr_packet(0);
+   	  send_array_packet(0);
     }
     else if (state == SEND_FBIN_PACKET){
       send_fbin_packet();
