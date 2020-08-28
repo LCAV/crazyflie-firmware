@@ -21,7 +21,7 @@
 
 ////////////////////////////////////// DEFINES /////////////////////////////////
 
-#define AUDIO_DECK_ADDRESS 47
+#define AUDIO_DECK_ADDRESS 47    // I2C adress of the deck
 #define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
 #define CRTP_MAX_PAYLOAD 29
 #define FFTSIZE 32
@@ -171,7 +171,7 @@ void send_fbin_packet(){
       packet_count_fbins = 0;
     }
     else{  // send packet
-      fillbuffer(fbin_array_p.data,packet_count,CRTP_MAX_PAYLOAD);
+      fillbuffer(fbin_array_p.data,N_PACKETS+packet_count_fbins,CRTP_MAX_PAYLOAD);
       crtpSendPacket(&fbin_array_p);
       packet_count_fbins++;
     }
