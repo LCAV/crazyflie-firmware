@@ -80,9 +80,9 @@ static uint16_t min_freq = 200;
 static uint16_t max_freq = 10000;
 
 // averaging parameters
-static bool use_iir = 0; // put to one to use IIR filter instead of averaging through moving_average_window buffers
+static bool use_iir = 0; // put to one to use IIR filter instead of averaging through ma_window buffers
 static float alpha_iir = 0.5; // iir moving average parameter
-static uint8_t moving_average_window = 4; // number of arrays averaged, maximum is 6 as 6*6 = 36 = AUDIO_N_PACKETS
+static uint8_t ma_window = 4; // number of arrays averaged, maximum is 6 as 6*6 = 36 = AUDIO_N_PACKETS
 
 ////////////////////////////////////// AUDIO DECK FUNCTIONS /////////////////////////////////
 
@@ -131,7 +131,7 @@ void float_array_to_byte_array(float float_array[], uint8_t byte_array[]){
 
 void add_divided_array_to_buffer(float array_to_divide[], float buffer[]){
   for (int i = 0; i < AUDIO_N_FLOATS; i++){
-      buffer[i] += array_to_divide[i] / moving_average_window;
+      buffer[i] += array_to_divide[i] / ma_window;
   }
 }
 
@@ -267,7 +267,7 @@ void audio_deckTask(void* arg){ // main task
       }
       else if(state == SEND_AUDIO_PACKET){
           if ((packet_count_audio % I2C_REQUEST_RATE == 0) &&
-              (packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * moving_average_window || use_iir)){
+              (packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)){
               // we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
               receive_audio_deck_array();
           }
@@ -293,7 +293,7 @@ DECK_DRIVER(audio_deck);
 PARAM_GROUP_START(audio)
 PARAM_ADD(PARAM_INT8, use_iir, &use_iir)
 PARAM_ADD(PARAM_FLOAT, alpha_iir, &alpha_iir)
-PARAM_ADD(PARAM_INT8, moving_average_window, &moving_average_window)
+PARAM_ADD(PARAM_INT8, ma_window, &ma_window)
 PARAM_ADD(PARAM_INT8, send_audio_enable, &send_audio_enable)
 PARAM_ADD(PARAM_INT8, filter_prop_enable, &filter_propellers_enable)
 PARAM_ADD(PARAM_INT8, filter_snr_enable, &filter_snr_enable)
