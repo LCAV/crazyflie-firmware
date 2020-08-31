@@ -44,7 +44,8 @@
 #define AUDIO_N_PACKETS_FULL (int) AUDIO_N_BYTES / CRTP_MAX_PAYLOAD
 #define AUDIO_N_PACKETS (AUDIO_N_PACKETS_FULL + 1)
 
-#define FBINS_N_BYTES FFTSIZE * INT16_PRECISION
+#define FBINS_N_INTS FFTSIZE
+#define FBINS_N_BYTES FBINS_N_INTS * INT16_PRECISION
 #define FBINS_N_PACKETS_FULL (int) FBINS_N_BYTES / CRTP_MAX_PAYLOAD
 #define FBINS_N_PACKETS (FBINS_N_PACKETS_FULL + 1)
 
@@ -62,6 +63,9 @@ static BYTE byte_array_CRTP[AUDIO_N_BYTES]; // buffer to be sent through CRTP
 static BYTE byte_array_received[TOTAL_N_BYTES]; // buffer where I2C data is received
 static float float_array_averaged[AUDIO_N_FLOATS]; // buffer where I2C data is averaged
 static float float_array_buffer[AUDIO_N_FLOATS]; // buffer where I2C data is converted to float
+// DEBUGGING START
+static uint16_t uint_array_buffer[FBINS_N_INTS]; // buffer where I2C data is converted to uint16
+// DEBUGGING END
 
 static uint16_t I2C_send_packet_int16[PARAM_N_INTS]; // buffer with the current parameters
 
@@ -69,6 +73,8 @@ static bool isInit;
 
 static uint8_t packet_count_audio = 0;
 static uint8_t packet_count_fbins = 0;
+
+///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
 static bool send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
@@ -104,22 +110,23 @@ void float_to_byte_array(float input, uint8_t output[]){
 }
 
 void fill_packet_data_fbins(uint8_t buffer[],uint8_t packet_count, uint8_t size){
-  for(uint8_t i = 0; i < size; i++)
+  for(uint8_t i = 0; i < size; i++) {
     buffer[i] = byte_array_received[packet_count * CRTP_MAX_PAYLOAD + i];
+  }
 }
 
 /**
- *  Fill a new packet with the corresponding data from byte_array_CRTP.
+ *  Fill a new audio packet with the corresponding data from byte_array_CRTP.
  */
 void fill_packet_data(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size){
   for(uint8_t i = 0; i < packet_size; i++) {
-      packet_data[i] = byte_array_CRTP[packet_count*CRTP_MAX_PAYLOAD+i];
+      packet_data[i] = byte_array_CRTP[packet_count * CRTP_MAX_PAYLOAD + i];
   }
 }
 
 void byte_array_to_float_array(float float_array[], uint8_t byte_array[], uint16_t n_floats){
   for (int i = 0; i < n_floats; i++){
-      byte_array_to_float(&byte_array[i*FLOAT_PRECISION], &float_array[i]);
+      byte_array_to_float(&byte_array[i * FLOAT_PRECISION], &float_array[i]);
   }
 }
 
@@ -128,6 +135,39 @@ void float_array_to_byte_array(float float_array[], uint8_t byte_array[]){
       float_to_byte_array(float_array[i], &byte_array[i * FLOAT_PRECISION]);
   }
 }
+
+
+// DEBUGGING START
+void uint_to_byte_array(uint16_t input, uint8_t output[]){
+  uint16_t temp = *((uint16_t*) &input);
+  for (int i = 0; i < INT16_PRECISION; i++){
+      output[i] = temp&0xFF;
+      temp >>= 8;
+  }
+}
+
+
+void byte_array_to_uint(uint8_t input[], uint16_t* output)
+{
+  for (int i = 0; i < INT16_PRECISION; i++){
+      *((uint8_t*)(output) + i) = input[i];
+  }
+}
+
+
+void byte_array_to_uint_array(uint16_t uint_array[], uint8_t byte_array[], uint16_t n_ints){
+  for (int i = 0; i < n_ints; i++){
+      byte_array_to_uint(&byte_array[i*INT16_PRECISION], &uint_array[i]);
+  }
+}
+
+void uint_array_to_byte_array(uint16_t uint_array[], uint8_t byte_array[]){
+  for (int i = 0; i < FBINS_N_INTS; i++){
+      uint_to_byte_array(uint_array[i], &byte_array[AUDIO_N_BYTES + i * INT16_PRECISION]);
+  }
+}
+// DEBUGGING END
+
 
 void add_divided_array_to_buffer(float array_to_divide[], float buffer[]){
   for (int i = 0; i < AUDIO_N_FLOATS; i++){
@@ -142,7 +182,7 @@ void exp_filter(float incoming_buffer[], float buffer[]){
 }
 
 void erase_buffer(float buffer[], int buffer_size){
-  for (int i = 0; i<buffer_size; i++){
+  for (int i = 0; i < buffer_size; i++){
       buffer[i] = 0;
   }
 }
@@ -200,6 +240,15 @@ void send_fbin_packet(){
 void receive_audio_deck_array(){
   i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
   byte_array_to_float_array(float_array_buffer, byte_array_received, AUDIO_N_FLOATS);
+
+  // DEBUGGING START
+  byte_array_to_uint_array(uint_array_buffer, byte_array_received, FBINS_N_INTS);
+  DEBUG_PRINT("received audio:");
+  for (int i = 0; i < 5; i++) {
+      DEBUG_PRINT("%d \n", uint_array_buffer[i]);
+  }
+  // DEBUGGING END
+
   if (!use_iir) {
       add_divided_array_to_buffer(float_array_buffer, float_array_averaged);
   }
@@ -252,6 +301,7 @@ void audio_deckTask(void* arg){ // main task
   if (use_iir){
       i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received); // get array from deck for initialization
       byte_array_to_float_array(float_array_averaged, byte_array_received, AUDIO_N_FLOATS);
+
   }
   while (1) {
       vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
