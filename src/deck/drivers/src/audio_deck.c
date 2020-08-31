@@ -74,7 +74,7 @@ static uint8_t packet_count_fbins = 0;
 static bool send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
 
 // frequency selection parameters
-static bool filter_propellers_enable = 1;
+static bool filter_propellers_enable = 0;
 static bool filter_snr_enable = 0;
 static uint16_t min_freq = 200;
 static uint16_t max_freq = 10000;
@@ -91,7 +91,7 @@ void byte_array_to_float(uint8_t input[], float* output)
   for (int i = 0; i < FLOAT_PRECISION; i++){
       *((uint8_t*)(output) + i) = input[i];
       // TODO(FD) this looks misplaced.
-      state = SEND_AUDIO_PACKET;
+      // state = SEND_AUDIO_PACKET;
   }
 }
 
@@ -179,15 +179,15 @@ void send_fbin_packet(){
       fbin_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, 2);
       fbin_array_p.size = CRTP_MAX_PAYLOAD;
 
-      if (packet_count_fbins == FBINS_N_PACKETS_FULL){// send last packet and reset counter
-          //fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
+      if (packet_count_fbins == FBINS_N_PACKETS_FULL){ // send last packet and reset counter
+          // fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
           fill_packet_data_fbins(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
           crtpSendPacket(&fbin_array_p);
           state = SEND_FIRST_PACKET;
           packet_count_fbins = 0;
       }
-      else{// send full packet
-          fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, CRTP_MAX_PAYLOAD);
+      else{ // send full packet
+          fill_packet_data_fbins(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, CRTP_MAX_PAYLOAD);
           crtpSendPacket(&fbin_array_p);
           packet_count_fbins++;
       }
