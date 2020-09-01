@@ -21,6 +21,12 @@
 
 ////////////////////////////////////// DEFINES /////////////////////////////////
 
+// debugging
+//#define USE_TEST_SIGNALS
+#ifdef USE_TEST_SIGNALS
+#include "audio_debug_data.h"
+#endif
+
 // constants
 #define INT16_PRECISION 2 // int16 = 2 bytes
 #define FLOAT_PRECISION 4// float32 = 4 bytes
@@ -63,9 +69,6 @@ static BYTE byte_array_CRTP[AUDIO_N_BYTES]; // buffer to be sent through CRTP
 static BYTE byte_array_received[TOTAL_N_BYTES]; // buffer where I2C data is received
 static float float_array_averaged[AUDIO_N_FLOATS]; // buffer where I2C data is averaged
 static float float_array_buffer[AUDIO_N_FLOATS]; // buffer where I2C data is converted to float
-// DEBUGGING START
-static uint16_t uint_array_buffer[FBINS_N_INTS]; // buffer where I2C data is converted to uint16
-// DEBUGGING END
 
 static uint16_t I2C_send_packet_int16[PARAM_N_INTS]; // buffer with the current parameters
 
@@ -97,7 +100,7 @@ void byte_array_to_float(uint8_t input[], float* output)
   for (int i = 0; i < FLOAT_PRECISION; i++){
       *((uint8_t*)(output) + i) = input[i];
       // TODO(FD) this looks misplaced.
-      // state = SEND_AUDIO_PACKET;
+      state = SEND_AUDIO_PACKET;
   }
 }
 
@@ -111,7 +114,7 @@ void float_to_byte_array(float input, uint8_t output[]){
 
 void fill_packet_data_fbins(uint8_t buffer[],uint8_t packet_count, uint8_t size){
   for(uint8_t i = 0; i < size; i++) {
-    buffer[i] = byte_array_received[packet_count * CRTP_MAX_PAYLOAD + i];
+    buffer[i] = byte_array_received[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
   }
 }
 
@@ -164,6 +167,10 @@ void byte_array_to_uint_array(uint16_t uint_array[], uint8_t byte_array[], uint1
 void uint_array_to_byte_array(uint16_t uint_array[], uint8_t byte_array[]){
   for (int i = 0; i < FBINS_N_INTS; i++){
       uint_to_byte_array(uint_array[i], &byte_array[AUDIO_N_BYTES + i * INT16_PRECISION]);
+      DEBUG_PRINT("%d: uint16 %d, bytes %d, %d \n",
+                  i, uint_array[i],
+                  byte_array[AUDIO_N_BYTES +  i * INT16_PRECISION],
+                  byte_array[AUDIO_N_BYTES +  i * INT16_PRECISION + 1]);
   }
 }
 // DEBUGGING END
@@ -221,13 +228,13 @@ void send_fbin_packet(){
 
       if (packet_count_fbins == FBINS_N_PACKETS_FULL){ // send last packet and reset counter
           // fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
-          fill_packet_data_fbins(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
+          fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
           crtpSendPacket(&fbin_array_p);
-          state = SEND_FIRST_PACKET;
           packet_count_fbins = 0;
+          state = SEND_FIRST_PACKET;
       }
       else{ // send full packet
-          fill_packet_data_fbins(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, CRTP_MAX_PAYLOAD);
+          fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, CRTP_MAX_PAYLOAD);
           crtpSendPacket(&fbin_array_p);
           packet_count_fbins++;
       }
@@ -238,16 +245,16 @@ void send_fbin_packet(){
  *
  */
 void receive_audio_deck_array(){
-  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
-  byte_array_to_float_array(float_array_buffer, byte_array_received, AUDIO_N_FLOATS);
 
-  // DEBUGGING START
-  byte_array_to_uint_array(uint_array_buffer, byte_array_received, FBINS_N_INTS);
-  DEBUG_PRINT("received audio:");
-  for (int i = 0; i < 5; i++) {
-      DEBUG_PRINT("%d \n", uint_array_buffer[i]);
-  }
-  // DEBUGGING END
+  #ifdef USE_TEST_SIGNALS
+  vTaskDelay(M2T(100)); // ms
+  float_array_to_byte_array(audio_data, byte_array_received);
+  uint_array_to_byte_array(frequencies, byte_array_received);
+  #else
+  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
+  #endif
+
+  byte_array_to_float_array(float_array_buffer, byte_array_received, AUDIO_N_FLOATS);
 
   if (!use_iir) {
       add_divided_array_to_buffer(float_array_buffer, float_array_averaged);
