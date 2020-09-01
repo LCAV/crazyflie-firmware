@@ -64,6 +64,10 @@ static enum{
   SEND_FBIN_PACKET
 } state = SEND_FIRST_PACKET;
 
+// DEBUGGING START
+uint32_t t1, t2;
+// DEBUGGING END
+
 
 static BYTE byte_array_CRTP[AUDIO_N_BYTES]; // buffer to be sent through CRTP
 static BYTE byte_array_received[TOTAL_N_BYTES]; // buffer where I2C data is received
@@ -99,8 +103,8 @@ void byte_array_to_float(uint8_t input[], float* output)
 {
   for (int i = 0; i < FLOAT_PRECISION; i++){
       *((uint8_t*)(output) + i) = input[i];
-      // TODO(FD) this looks misplaced.
-      state = SEND_AUDIO_PACKET;
+      // TODO(FD) this looks misplaced. Why was it here?
+      // state = SEND_AUDIO_PACKET;
   }
 }
 
@@ -201,44 +205,40 @@ void copy_buffer(uint16_t input[], uint16_t output[], uint8_t buffer_size){
 }
 
 void send_audio_packet(uint8_t channel){
-  if(send_audio_enable){
-      static CRTPPacket signal_array_p;
-      signal_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
-      signal_array_p.size = CRTP_MAX_PAYLOAD;
+    static CRTPPacket signal_array_p;
+    signal_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
+    signal_array_p.size = CRTP_MAX_PAYLOAD;
 
-      if (packet_count_audio == AUDIO_N_PACKETS_FULL){ 	// send last packet and reset counter
-          fill_packet_data(signal_array_p.data, packet_count_audio, AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
-          crtpSendPacket(&signal_array_p);
-          state = SEND_FBIN_PACKET;
-          packet_count_audio = 0;
-      }
-      else { // send full packet
-          fill_packet_data(signal_array_p.data, packet_count_audio, CRTP_MAX_PAYLOAD);
-          crtpSendPacket(&signal_array_p);
-          packet_count_audio++;
-      }
-  }
+    if (packet_count_audio == AUDIO_N_PACKETS_FULL){ 	// send last packet and reset counter
+        fill_packet_data(signal_array_p.data, packet_count_audio, AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
+        crtpSendPacket(&signal_array_p);
+        state = SEND_FBIN_PACKET;
+        packet_count_audio = 0;
+    }
+    else { // send full packet
+        fill_packet_data(signal_array_p.data, packet_count_audio, CRTP_MAX_PAYLOAD);
+        crtpSendPacket(&signal_array_p);
+        packet_count_audio++;
+    }
 }
 
 void send_fbin_packet(){
-  if(send_audio_enable){
-      static CRTPPacket fbin_array_p;
-      fbin_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, 2);
-      fbin_array_p.size = CRTP_MAX_PAYLOAD;
+    static CRTPPacket fbin_array_p;
+    fbin_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, 2);
+    fbin_array_p.size = CRTP_MAX_PAYLOAD;
 
-      if (packet_count_fbins == FBINS_N_PACKETS_FULL){ // send last packet and reset counter
-          // fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
-          fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
-          crtpSendPacket(&fbin_array_p);
-          packet_count_fbins = 0;
-          state = SEND_FIRST_PACKET;
-      }
-      else{ // send full packet
-          fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, CRTP_MAX_PAYLOAD);
-          crtpSendPacket(&fbin_array_p);
-          packet_count_fbins++;
-      }
-  }
+    if (packet_count_fbins == FBINS_N_PACKETS_FULL){ // send last packet and reset counter
+        // fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
+        fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
+        crtpSendPacket(&fbin_array_p);
+        packet_count_fbins = 0;
+        state = SEND_FIRST_PACKET;
+    }
+    else{ // send full packet
+        fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, CRTP_MAX_PAYLOAD);
+        crtpSendPacket(&fbin_array_p);
+        packet_count_fbins++;
+    }
 }
 
 /** Request current audio data from the audio deck (signals and frequency bins)
@@ -310,23 +310,41 @@ void audio_deckTask(void* arg){ // main task
       byte_array_to_float_array(float_array_averaged, byte_array_received, AUDIO_N_FLOATS);
 
   }
+
+
   while (1) {
       vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-      if (state == SEND_FIRST_PACKET){
+      if (!send_audio_enable) {
+          continue;
+      }
+      else if (state == SEND_FIRST_PACKET){
           float_array_to_byte_array(float_array_averaged, byte_array_CRTP); // transfer the averaged audio
 
           if(!use_iir){
               erase_buffer(float_array_averaged, AUDIO_N_FLOATS);
           }
+          t1 = xTaskGetTickCount();
           send_audio_packet(1); // first packet is sent in channel 1 (start condition)
+          t2 = xTaskGetTickCount();
+          DEBUG_PRINT("time to send first audio packet: %lu \n", t2-t1);
+
+          t1 = xTaskGetTickCount();
           send_param_I2C(); // send parameters to the audio deck with I2C
+          t2 = xTaskGetTickCount();
+          DEBUG_PRINT("time to send parameters: %lu \n", t2-t1);
+
           state = SEND_AUDIO_PACKET;
       }
       else if(state == SEND_AUDIO_PACKET){
+          // TODO(FD): make sure below works for ma_window=1.
           if ((packet_count_audio % I2C_REQUEST_RATE == 0) &&
               (packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)){
               // we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
+              t1 = xTaskGetTickCount();
               receive_audio_deck_array();
+              t2 = xTaskGetTickCount();
+              DEBUG_PRINT("time to receive audio data: %lu \n", t2-t1);
+
           }
           send_audio_packet(0);
       }
