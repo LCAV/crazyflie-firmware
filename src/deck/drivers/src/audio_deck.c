@@ -43,7 +43,7 @@
 
 // buffer sizes
 #define PARAM_N_INTS (N_MOTORS + SIZE_OF_PARAM_I2C) // in uint16, n_motors for the current trhust commands
-#define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION)
+#define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION) // 14 bytes
 
 #define AUDIO_N_FLOATS N_MICS * FFTSIZE * 2 // *2 for complex numbers
 #define AUDIO_N_BYTES (AUDIO_N_FLOATS * FLOAT_PRECISION)
@@ -250,9 +250,19 @@ void receive_audio_deck_array(){
   vTaskDelay(M2T(100)); // ms
   float_array_to_byte_array(audio_data, byte_array_received);
   uint_array_to_byte_array(frequencies, byte_array_received);
+  uint8_t success = 1;
   #else
-  i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
+  uint8_t success = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
+  //uint8_t success = 0;
   #endif
+
+  if (!success) {
+      DEBUG_PRINT("Warning: could not read data from audio deck\n");
+  }
+  else{
+      DEBUG_PRINT("Success: could read data from audio deck\n");
+  }
+
 
   byte_array_to_float_array(float_array_buffer, byte_array_received, AUDIO_N_FLOATS);
 
@@ -265,8 +275,10 @@ void receive_audio_deck_array(){
 }
 
 void send_param_I2C(){
-  uint16_t *motorPower_p = get_motor_power();
-  copy_buffer(motorPower_p, I2C_send_packet_int16, N_MOTORS);
+  if (filter_propellers_enable) {
+      uint16_t *motorPower_p = get_motor_power();
+      copy_buffer(motorPower_p, I2C_send_packet_int16, N_MOTORS);
+  }
 
   I2C_send_packet_int16[N_MOTORS] = min_freq;
   I2C_send_packet_int16[N_MOTORS + 1] = max_freq;
@@ -275,20 +287,20 @@ void send_param_I2C(){
   I2C_send_packet_int16[N_MOTORS + 2] = enables;
 
   uint8_t *I2C_send_packet_byte = (uint8_t*)I2C_send_packet_int16;
-  i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS, PARAM_N_BYTES, I2C_send_packet_byte);
-}
-
-void send_motorPower(){ // not used anymore because included in send_param_I2C
-  uint16_t *motorPower_p;
-  motorPower_p = get_motor_power();
-  uint8_t *motorPower_byte_p = (uint8_t*)motorPower_p;
-  i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS,N_MOTORS*INT16_PRECISION, motorPower_byte_p);
+  uint8_t success = i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS, PARAM_N_BYTES, I2C_send_packet_byte);
+  //uint8_t success = 0;
+  if (!success) {
+      DEBUG_PRINT("Warning: could not send params to audio deck\n");
+  }
+  else{
+      DEBUG_PRINT("Success: could send params to audio deck\n");
+  }
 }
 
 void audio_deckInit(DeckInfo* info){ // deck initialisation
   if (isInit)
     return;
-  DEBUG_PRINT("AUDIO INIT");
+  DEBUG_PRINT("AUDIO INIT\n");
   xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL, AUDIO_TASK_PRI, NULL);
 
   isInit = true;
@@ -297,7 +309,7 @@ void audio_deckInit(DeckInfo* info){ // deck initialisation
 bool audio_deckTest(void){// deck test
   if (!isInit)
     return false;
-  DEBUG_PRINT("AUDIO TEST_PASSED");
+  DEBUG_PRINT("AUDIO TEST_PASSED\n");
   return true;
 }
 
@@ -323,15 +335,9 @@ void audio_deckTask(void* arg){ // main task
           if(!use_iir){
               erase_buffer(float_array_averaged, AUDIO_N_FLOATS);
           }
-          t1 = xTaskGetTickCount();
           send_audio_packet(1); // first packet is sent in channel 1 (start condition)
-          t2 = xTaskGetTickCount();
-          DEBUG_PRINT("time to send first audio packet: %lu \n", t2-t1);
 
-          t1 = xTaskGetTickCount();
           send_param_I2C(); // send parameters to the audio deck with I2C
-          t2 = xTaskGetTickCount();
-          DEBUG_PRINT("time to send parameters: %lu \n", t2-t1);
 
           state = SEND_AUDIO_PACKET;
       }
@@ -340,11 +346,7 @@ void audio_deckTask(void* arg){ // main task
           if ((packet_count_audio % I2C_REQUEST_RATE == 0) &&
               (packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)){
               // we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
-              t1 = xTaskGetTickCount();
               receive_audio_deck_array();
-              t2 = xTaskGetTickCount();
-              DEBUG_PRINT("time to receive audio data: %lu \n", t2-t1);
-
           }
           send_audio_packet(0);
       }
