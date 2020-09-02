@@ -19,6 +19,17 @@
 
 #include "audio_deck.h"
 
+
+/////////////////////////////////////////////////////////////////////////////////
+/**
+ *  Report from debugging session:
+ *
+ *  send_audio_enable | no  | yes | no
+ *  receive_i2c       | yes | yes | yes
+ *  send_i2c          | no  | no  | yes
+ *
+ */
+
 ////////////////////////////////////// DEFINES /////////////////////////////////
 
 // debugging
@@ -287,6 +298,7 @@ void send_param_I2C(){
   I2C_send_packet_int16[N_MOTORS + 2] = enables;
 
   uint8_t *I2C_send_packet_byte = (uint8_t*)I2C_send_packet_int16;
+
   uint8_t success = i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS, PARAM_N_BYTES, I2C_send_packet_byte);
   //uint8_t success = 0;
   if (!success) {
@@ -326,22 +338,24 @@ void audio_deckTask(void* arg){ // main task
 
   while (1) {
       vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-      if (!send_audio_enable) {
-          continue;
-      }
-      else if (state == SEND_FIRST_PACKET){
-          float_array_to_byte_array(float_array_averaged, byte_array_CRTP); // transfer the averaged audio
 
-          if(!use_iir){
-              erase_buffer(float_array_averaged, AUDIO_N_FLOATS);
+      if (state == SEND_FIRST_PACKET){
+
+          if (send_audio_enable) {
+            float_array_to_byte_array(float_array_averaged, byte_array_CRTP); // transfer the averaged audio
+
+            if(!use_iir){
+                erase_buffer(float_array_averaged, AUDIO_N_FLOATS);
+            }
+            send_audio_packet(1); // first packet is sent in channel 1 (start condition)
+
+            state = SEND_AUDIO_PACKET;
           }
-          send_audio_packet(1); // first packet is sent in channel 1 (start condition)
 
           send_param_I2C(); // send parameters to the audio deck with I2C
-
-          state = SEND_AUDIO_PACKET;
       }
       else if(state == SEND_AUDIO_PACKET){
+
           // TODO(FD): make sure below works for ma_window=1.
           if ((packet_count_audio % I2C_REQUEST_RATE == 0) &&
               (packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)){
@@ -349,6 +363,7 @@ void audio_deckTask(void* arg){ // main task
               receive_audio_deck_array();
           }
           send_audio_packet(0);
+
       }
       else if (state == SEND_FBIN_PACKET){
           send_fbin_packet();
@@ -371,9 +386,9 @@ PARAM_GROUP_START(audio)
 PARAM_ADD(PARAM_INT8, use_iir, &use_iir)
 PARAM_ADD(PARAM_FLOAT, alpha_iir, &alpha_iir)
 PARAM_ADD(PARAM_INT8, ma_window, &ma_window)
-PARAM_ADD(PARAM_INT8, send_audio_enable, &send_audio_enable)
-PARAM_ADD(PARAM_INT8, filter_prop_enable, &filter_propellers_enable)
-PARAM_ADD(PARAM_INT8, filter_snr_enable, &filter_snr_enable)
+PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
+PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_propellers_enable)
+PARAM_ADD(PARAM_UINT8, filter_snr_enable, &filter_snr_enable)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
 PARAM_GROUP_STOP(audio)
