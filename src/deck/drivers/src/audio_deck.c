@@ -32,6 +32,10 @@
 
 ////////////////////////////////////// DEFINES /////////////////////////////////
 
+// SPI stuff
+//#define CS_PIN DECK_GPIO_IO1
+
+
 // debugging
 //#define USE_TEST_SIGNALS
 #ifdef USE_TEST_SIGNALS
@@ -67,6 +71,9 @@
 #define FBINS_N_PACKETS (FBINS_N_PACKETS_FULL + 1)
 
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES)
+
+#define SPI_N_BYTES 1
+
 
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 static enum{
@@ -108,6 +115,45 @@ static uint16_t max_freq = 10000;
 static bool use_iir = 0; // put to one to use IIR filter instead of averaging through ma_window buffers
 static float alpha_iir = 0.5; // iir moving average parameter
 static uint8_t ma_window = 4; // number of arrays averaged, maximum is 6 as 6*6 = 36 = AUDIO_N_PACKETS
+
+////////////////////////////////////// SPI COMMUNICATION / ///////////////////////////////////
+
+// TOTAL_N_BYTES // we have more audio to receive than params to send
+static uint16_t spiSpeed = SPI_BAUDRATE_2MHZ;
+
+static uint8_t spiTxBuffer[SPI_N_BYTES];
+static uint8_t spiRxBuffer[SPI_N_BYTES];
+static uint8_t spi_write_array[SPI_N_BYTES];
+
+static uint8_t spiWrite(const void* data, size_t dataLength)
+{
+  spiBeginTransaction(spiSpeed);
+  memcpy(spiTxBuffer, data, dataLength);
+  uint8_t success = spiExchange(dataLength, spiTxBuffer, spiRxBuffer);
+  spiEndTransaction();
+  return success;
+}
+
+static uint8_t spiRead(void* data, size_t dataLength)
+{
+  spiBeginTransaction(spiSpeed);
+  memset(spiTxBuffer, 0, dataLength);
+  uint8_t success = spiExchange(dataLength, spiTxBuffer, spiRxBuffer);
+  memcpy(data, spiRxBuffer, dataLength);
+  spiEndTransaction();
+  return success;
+}
+
+static uint8_t spiReadWrite(void* dataRead, void* dataWrite, size_t dataLength)
+{
+  spiBeginTransaction(spiSpeed);
+  memcpy(spiTxBuffer, dataWrite, dataLength);
+  uint8_t success = spiExchange(dataLength, spiTxBuffer, spiRxBuffer);
+  memcpy(dataRead, spiRxBuffer, dataLength);
+  spiEndTransaction();
+  return success;
+}
+
 
 ////////////////////////////////////// AUDIO DECK FUNCTIONS /////////////////////////////////
 
@@ -252,15 +298,18 @@ void receive_audio_deck_array(){
   uint_array_to_byte_array(frequencies, byte_array_received);
   uint8_t success = 1;
   #else
-  uint8_t success = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
-  //uint8_t success = 0;
+  //uint8_t success = i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received);
+  //uint8_t success = spiRead(&byte_array_received, TOTAL_N_BYTES);
+  uint8_t success = 0;
+
   #endif
 
   if (!success && debug) {
-      DEBUG_PRINT("Warning: could not read data from audio deck\n");
+      DEBUG_PRINT("Warning: could not read data from audio deck \n");
   }
   else if (debug) {
       DEBUG_PRINT("Success: could read data from audio deck\n");
+
   }
 
 
@@ -286,10 +335,12 @@ void send_param_I2C(){
   uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
   I2C_send_packet_int16[N_MOTORS + 2] = enables;
 
-  uint8_t *I2C_send_packet_byte = (uint8_t*)I2C_send_packet_int16;
+  //uint8_t *I2C_send_packet_byte = (uint8_t*)I2C_send_packet_int16;
 
-  uint8_t success = i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS, PARAM_N_BYTES, I2C_send_packet_byte);
-  //uint8_t success = 0;
+  //uint8_t success = i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS, PARAM_N_BYTES, I2C_send_packet_byte);
+  //uint8_t success = spiWrite(&empty_header, HEADER_SIZE, I2C_send_packet_byte, PARAM_N_BYTES);
+  uint8_t success = 0;
+
   if (!success && debug) {
       DEBUG_PRINT("Warning: could not send params to audio deck\n");
   }
@@ -302,6 +353,9 @@ void audio_deckInit(DeckInfo* info){ // deck initialisation
   if (isInit)
     return;
   DEBUG_PRINT("AUDIO INIT\n");
+
+  spiBegin();
+
   xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL, AUDIO_TASK_PRI, NULL);
 
   isInit = true;
@@ -319,15 +373,35 @@ void audio_deckTask(void* arg){ // main task
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
   if (use_iir){
-      i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received); // get array from deck for initialization
+      //i2cdevRead(I2C1_DEV, AUDIO_DECK_ADDRESS, TOTAL_N_BYTES, byte_array_received); // get array from deck for initialization
+      //spiRead(&byte_array_received, TOTAL_N_BYTES);
       byte_array_to_float_array(float_array_averaged, byte_array_received, AUDIO_N_FLOATS);
 
   }
 
+  memset(spi_write_array, 0x00, SPI_N_BYTES);
 
   while (1) {
       vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
+      vTaskDelay(M2T(300)); // wait for 0.3 seconds;
 
+      if (debug) {
+          uint8_t test_readwrite_array[SPI_N_BYTES];
+          test_readwrite_array[0] = 0xFF;
+
+          spi_write_array[0] = xTaskGetTickCount() % 0xFF;
+          uint8_t success_readwrite = spiReadWrite(&test_readwrite_array, &spi_write_array, SPI_N_BYTES);
+          DEBUG_PRINT("SPI %d: read %d, write %d \n", success_readwrite, test_readwrite_array[0], spi_write_array[0]);
+      }
+
+      continue;
+
+      uint8_t success_write = spiWrite(&spi_write_array, SPI_N_BYTES);
+      DEBUG_PRINT("SPI %d: writing %d \n", success_write, spi_write_array[0]);
+
+      uint8_t test_read_array[1] = {0x00};
+      uint8_t success_read = spiRead(&test_read_array, SPI_N_BYTES);
+      DEBUG_PRINT("SPI %d: read %d \n", success_read, test_read_array[0]);
       if (state == SEND_FIRST_PACKET){
 
           if (send_audio_enable) {
