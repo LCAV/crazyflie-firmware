@@ -77,7 +77,6 @@ static enum{
 
 // DEBUGGING START
 uint32_t t1, t2;
-uint8_t debug = 0;
 // DEBUGGING END
 
 
@@ -96,6 +95,7 @@ static uint8_t packet_count_fbins = 0;
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
+uint8_t debug = 0; // enables DEBUG_PRINT
 static bool send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
 
 // frequency selection parameters
@@ -111,6 +111,24 @@ static uint8_t ma_window = 4; // number of arrays averaged, maximum is 6 as 6*6 
 
 ////////////////////////////////////// AUDIO DECK FUNCTIONS /////////////////////////////////
 
+/**
+ *  Fill frequency data after the audio data in the CRTP packet.
+ */
+void fill_packet_data_fbins(uint8_t buffer[], uint8_t packet_count, uint8_t packet_size){
+  for(uint8_t i = 0; i < packet_size; i++) {
+    buffer[i] = byte_array_received[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
+  }
+}
+
+/**
+ *  Fill a new CRTP packet with the corresponding data from byte_array_CRTP.
+ */
+void fill_packet_data_audio(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size){
+  for(uint8_t i = 0; i < packet_size; i++) {
+      packet_data[i] = byte_array_CRTP[packet_count * CRTP_MAX_PAYLOAD + i];
+  }
+}
+
 void byte_array_to_float(uint8_t input[], float* output)
 {
   for (int i = 0; i < FLOAT_PRECISION; i++){
@@ -120,32 +138,18 @@ void byte_array_to_float(uint8_t input[], float* output)
   }
 }
 
+void byte_array_to_float_array(float float_array[], uint8_t byte_array[], uint16_t n_floats){
+  for (int i = 0; i < n_floats; i++){
+      byte_array_to_float(&byte_array[i * FLOAT_PRECISION], &float_array[i]);
+  }
+}
+
+
 void float_to_byte_array(float input, uint8_t output[]){
   uint32_t temp = *((uint32_t*) &input);
   for (int i = 0; i < FLOAT_PRECISION; i++){
       output[i] = temp&0xFF;
       temp >>= 8;
-  }
-}
-
-void fill_packet_data_fbins(uint8_t buffer[],uint8_t packet_count, uint8_t size){
-  for(uint8_t i = 0; i < size; i++) {
-    buffer[i] = byte_array_received[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
-  }
-}
-
-/**
- *  Fill a new audio packet with the corresponding data from byte_array_CRTP.
- */
-void fill_packet_data(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size){
-  for(uint8_t i = 0; i < packet_size; i++) {
-      packet_data[i] = byte_array_CRTP[packet_count * CRTP_MAX_PAYLOAD + i];
-  }
-}
-
-void byte_array_to_float_array(float float_array[], uint8_t byte_array[], uint16_t n_floats){
-  for (int i = 0; i < n_floats; i++){
-      byte_array_to_float(&byte_array[i * FLOAT_PRECISION], &float_array[i]);
   }
 }
 
@@ -162,21 +166,6 @@ void uint_to_byte_array(uint16_t input, uint8_t output[]){
   for (int i = 0; i < INT16_PRECISION; i++){
       output[i] = temp&0xFF;
       temp >>= 8;
-  }
-}
-
-
-void byte_array_to_uint(uint8_t input[], uint16_t* output)
-{
-  for (int i = 0; i < INT16_PRECISION; i++){
-      *((uint8_t*)(output) + i) = input[i];
-  }
-}
-
-
-void byte_array_to_uint_array(uint16_t uint_array[], uint8_t byte_array[], uint16_t n_ints){
-  for (int i = 0; i < n_ints; i++){
-      byte_array_to_uint(&byte_array[i*INT16_PRECISION], &uint_array[i]);
   }
 }
 
@@ -222,13 +211,13 @@ void send_audio_packet(uint8_t channel){
     signal_array_p.size = CRTP_MAX_PAYLOAD;
 
     if (packet_count_audio == AUDIO_N_PACKETS_FULL){ 	// send last packet and reset counter
-        fill_packet_data(signal_array_p.data, packet_count_audio, AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
+        fill_packet_data_audio(signal_array_p.data, packet_count_audio, AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
         crtpSendPacket(&signal_array_p);
         state = SEND_FBIN_PACKET;
         packet_count_audio = 0;
     }
     else { // send full packet
-        fill_packet_data(signal_array_p.data, packet_count_audio, CRTP_MAX_PAYLOAD);
+        fill_packet_data_audio(signal_array_p.data, packet_count_audio, CRTP_MAX_PAYLOAD);
         crtpSendPacket(&signal_array_p);
         packet_count_audio++;
     }
@@ -240,7 +229,6 @@ void send_fbin_packet(){
     fbin_array_p.size = CRTP_MAX_PAYLOAD;
 
     if (packet_count_fbins == FBINS_N_PACKETS_FULL){ // send last packet and reset counter
-        // fill_packet_data(fbin_array_p.data, AUDIO_N_PACKETS + packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
         fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins, FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
         crtpSendPacket(&fbin_array_p);
         packet_count_fbins = 0;
@@ -384,13 +372,13 @@ static const DeckDriver audio_deck = {
 DECK_DRIVER(audio_deck);
 
 PARAM_GROUP_START(audio)
-PARAM_ADD(PARAM_INT8, use_iir, &use_iir)
-PARAM_ADD(PARAM_FLOAT, alpha_iir, &alpha_iir)
-PARAM_ADD(PARAM_INT8, ma_window, &ma_window)
+PARAM_ADD(PARAM_UINT8, debug, &debug)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
+PARAM_ADD(PARAM_UINT8, use_iir, &use_iir)
+PARAM_ADD(PARAM_FLOAT, alpha_iir, &alpha_iir)
+PARAM_ADD(PARAM_UINT8, ma_window, &ma_window)
 PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_propellers_enable)
 PARAM_ADD(PARAM_UINT8, filter_snr_enable, &filter_snr_enable)
-PARAM_ADD(PARAM_UINT8, debug, &debug)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
 PARAM_GROUP_STOP(audio)
