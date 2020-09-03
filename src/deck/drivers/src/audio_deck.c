@@ -77,6 +77,7 @@ static enum{
 
 // DEBUGGING START
 uint32_t t1, t2;
+uint8_t debug = 0;
 // DEBUGGING END
 
 
@@ -267,10 +268,10 @@ void receive_audio_deck_array(){
   //uint8_t success = 0;
   #endif
 
-  if (!success) {
+  if (!success && debug) {
       DEBUG_PRINT("Warning: could not read data from audio deck\n");
   }
-  else{
+  else if (debug) {
       DEBUG_PRINT("Success: could read data from audio deck\n");
   }
 
@@ -301,10 +302,10 @@ void send_param_I2C(){
 
   uint8_t success = i2cdevWrite(I2C1_DEV, AUDIO_DECK_ADDRESS, PARAM_N_BYTES, I2C_send_packet_byte);
   //uint8_t success = 0;
-  if (!success) {
+  if (!success && debug) {
       DEBUG_PRINT("Warning: could not send params to audio deck\n");
   }
-  else{
+  else if (debug) {
       DEBUG_PRINT("Success: could send params to audio deck\n");
   }
 }
@@ -389,6 +390,7 @@ PARAM_ADD(PARAM_INT8, ma_window, &ma_window)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
 PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_propellers_enable)
 PARAM_ADD(PARAM_UINT8, filter_snr_enable, &filter_snr_enable)
+PARAM_ADD(PARAM_UINT8, debug, &debug)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
 PARAM_GROUP_STOP(audio)
