@@ -54,7 +54,7 @@
 #define N_MOTORS 4
 #define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
 #define I2C_REQUEST_RATE 6 // I2C is requested each 6 cycles of main task i.e. 60 ms = 6/100Hz
-#define SIZE_OF_PARAM_I2C 3 // in uint16, min_freq = 1, max_freq = 1, snr + propeller enable = 1
+#define SIZE_OF_PARAM_I2C 4 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, snr + propeller enable = 1
 
 // buffer sizes
 #define PARAM_N_INTS (N_MOTORS + SIZE_OF_PARAM_I2C) // in uint16, n_motors for the current trhust commands
@@ -108,8 +108,10 @@ static bool send_audio_enable = 0; // enables the sending of CRTP packets with t
 // frequency selection parameters
 static bool filter_propellers_enable = 0;
 static bool filter_snr_enable = 0;
-static uint16_t min_freq = 200;
+static uint16_t min_freq = 100;
 static uint16_t max_freq = 10000;
+static uint16_t delta_freq = 100;
+
 
 // averaging parameters
 static bool use_iir = 0; // put to one to use IIR filter instead of averaging through ma_window buffers
@@ -331,9 +333,10 @@ void send_param_I2C(){
 
   I2C_send_packet_int16[N_MOTORS] = min_freq;
   I2C_send_packet_int16[N_MOTORS + 1] = max_freq;
+  I2C_send_packet_int16[N_MOTORS + 2] = delta_freq;
 
   uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
-  I2C_send_packet_int16[N_MOTORS + 2] = enables;
+  I2C_send_packet_int16[N_MOTORS + 3] = enables;
 
   //uint8_t *I2C_send_packet_byte = (uint8_t*)I2C_send_packet_int16;
 
@@ -455,4 +458,5 @@ PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_propellers_enable)
 PARAM_ADD(PARAM_UINT8, filter_snr_enable, &filter_snr_enable)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
+PARAM_ADD(PARAM_UINT16, delta_freq, &delta_freq)
 PARAM_GROUP_STOP(audio)
