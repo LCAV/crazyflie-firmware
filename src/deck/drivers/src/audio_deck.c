@@ -71,7 +71,8 @@
 
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES)
 
-#define SPI_N_BYTES TOTAL_N_BYTES // we have more audio to receive than params to send
+#define SPI_N_BYTES 1
+
 
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 static enum{
@@ -85,10 +86,11 @@ uint32_t t1, t2;
 // DEBUGGING END
 
 
-static BYTE crtp_tx_buffer[AUDIO_N_BYTES]; // buffer to be sent through CRTP
-static float float_buffer_averaged[AUDIO_N_FLOATS]; // buffer where I2C data is averaged
-static float float_buffer[AUDIO_N_FLOATS]; // buffer where I2C data is converted to float
+static BYTE crtp_tx_buffer[AUDIO_N_BYTES]; // buffer with audio data to be sent through CRTP
+static float float_buffer_averaged[AUDIO_N_FLOATS]; // buffer where audio data is averaged
+static float float_buffer[AUDIO_N_FLOATS]; // buffer where audio data is converted to float
 
+static uint16_t param_buffer_uint16[PARAM_N_INTS]; // buffer with the current parameters
 
 static bool isInit;
 
@@ -117,7 +119,6 @@ static uint8_t ma_window = 4; // number of arrays averaged, maximum is 6 as 6*6 
 ////////////////////////////////////// SPI COMMUNICATION / ///////////////////////////////////
 
 static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
-static uint16_t param_buffer_uint16[PARAM_N_INTS]; // buffer with the current parameters
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 
@@ -125,7 +126,7 @@ static uint8_t spi_rx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
 
-static uint8_t spiReadWrite(void* data_read, void* data_write, size_t data_length)
+static uint8_t spiReadWrite(void* data_read, const void* data_write, size_t data_length)
 {
   spiBeginTransaction(spi_speed);
   memcpy(temp_spi_tx_buffer, data_write, data_length);
@@ -141,9 +142,9 @@ static uint8_t spiReadWrite(void* data_read, void* data_write, size_t data_lengt
 /**
  *  Fill frequency data after the audio data in the CRTP packet.
  */
-void fill_packet_data_fbins(uint8_t buffer[], uint8_t packet_count, uint8_t packet_size){
+void fill_packet_data_fbins(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size){
   for(uint8_t i = 0; i < packet_size; i++) {
-    buffer[i] = spi_rx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
+    packet_data[i] = spi_rx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
   }
 }
 
@@ -199,10 +200,6 @@ void uint_to_byte_array(uint16_t input, uint8_t output[]){
 void uint_array_to_byte_array(uint16_t uint_array[], uint8_t byte_array[]){
   for (int i = 0; i < FBINS_N_INTS; i++){
       uint_to_byte_array(uint_array[i], &byte_array[i * INT16_PRECISION]);
-      DEBUG_PRINT("%d: uint16 %d, bytes %d, %d \n",
-                  i, uint_array[i],
-                  byte_array[AUDIO_N_BYTES +  i * INT16_PRECISION],
-                  byte_array[AUDIO_N_BYTES +  i * INT16_PRECISION + 1]);
   }
 }
 // DEBUGGING END
@@ -231,24 +228,6 @@ void copy_buffer(uint16_t input[], uint16_t output[], uint8_t buffer_size){
       output[i] = input[i];
   }
 }
-
-void fill_tx_buffer(){
-  if (filter_propellers_enable) {
-      uint16_t *motorPower_p = get_motor_power();
-      copy_buffer(motorPower_p, param_buffer_uint16, N_MOTORS);
-  }
-
-  param_buffer_uint16[N_MOTORS] = min_freq;
-  param_buffer_uint16[N_MOTORS + 1] = max_freq;
-  param_buffer_uint16[N_MOTORS + 2] = delta_freq;
-
-  uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
-  param_buffer_uint16[N_MOTORS + 3] = enables;
-
-  memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
-  memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
-}
-
 
 void send_audio_packet(uint8_t channel){
     static CRTPPacket signal_array_p;
@@ -286,17 +265,17 @@ void send_fbin_packet(){
     }
 }
 
-/** Request current audio data from the audio deck (signals and frequency bins)
- *
+/** Exchange current audio data from the audio deck (signals and frequency bins)
+ *  and parameters.
  */
 void exchange_data_audio_deck(){
 
   #ifdef USE_TEST_SIGNALS
+  vTaskDelay(M2T(100)); // ms
   float_array_to_byte_array(audio_data, spi_rx_buffer);
   uint_array_to_byte_array(frequencies, spi_rx_buffer[AUDIO_N_BYTES]);
   uint8_t success = 1;
   #else
-
   fill_tx_buffer();
   uint8_t success = spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
   #endif
@@ -318,6 +297,28 @@ void exchange_data_audio_deck(){
   else{
       exp_filter(float_buffer, float_buffer_averaged);
   }
+}
+
+void fill_tx_buffer(){
+  if (filter_propellers_enable) {
+      uint16_t *motorPower_p = get_motor_power();
+      copy_buffer(motorPower_p, param_buffer_uint16, N_MOTORS);
+  }
+  else {
+      for (int i = 0; i < N_MOTORS; i++) {
+      	param_buffer_uint16[i] = 0;
+      }
+  }
+
+  param_buffer_uint16[N_MOTORS] = min_freq;
+  param_buffer_uint16[N_MOTORS + 1] = max_freq;
+  param_buffer_uint16[N_MOTORS + 2] = delta_freq;
+
+  uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
+  param_buffer_uint16[N_MOTORS + 3] = enables;
+
+  memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
+  memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
 }
 
 void audio_deckInit(DeckInfo* info){ // deck initialisation
@@ -349,6 +350,7 @@ void audio_deckTask(void* arg){ // main task
       byte_array_to_float_array(float_buffer_averaged, spi_rx_buffer, AUDIO_N_FLOATS);
   }
 
+
   while (1) {
       vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 
@@ -358,7 +360,7 @@ void audio_deckTask(void* arg){ // main task
 	  memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
 	  spi_tx_buffer[0] = xTaskGetTickCount() % 0xFF;
 	  uint8_t success_readwrite = spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
-	  DEBUG_PRINT("SPI success %d: read %-4d, write %-d \n", success_readwrite, spi_rx_buffer[0], spi_tx_buffer[0]);
+	  DEBUG_PRINT("SPI success %d: read %-4d, write %-4d \n", success_readwrite, spi_rx_buffer[0], spi_tx_buffer[0]);
 
       continue;
 
