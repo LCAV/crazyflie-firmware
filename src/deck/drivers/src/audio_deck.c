@@ -36,8 +36,7 @@
 #define N_MICS 4
 #define AUDIO_DECK_ADDRESS 47// I2C adress of the deck
 #define N_MOTORS 4
-// TODO(FD) change back to 100
-#define AUDIO_TASK_FREQUENCY 10 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
 #define I2C_REQUEST_RATE 6 // I2C is requested each 6 cycles of main task i.e. 60 ms = 6/100Hz
 #define SIZE_OF_PARAM_I2C 4 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, snr + propeller enable = 1
 
@@ -306,7 +305,7 @@ void fill_tx_buffer() {
 		copy_buffer(motorPower_p, param_buffer_uint16, N_MOTORS);
 	} else {
 		for (int i = 0; i < N_MOTORS; i++) {
-			param_buffer_uint16[i] = 0;
+			param_buffer_uint16[i] = (uint16_t) 0;
 		}
 	}
 
@@ -392,7 +391,6 @@ void audio_deckTask(void *arg) { // main task
 				}
 			} else if (state == SEND_AUDIO_PACKET) {
 
-				// TODO(FD): make sure below works for ma_window=1.
 				if ((packet_count_audio % I2C_REQUEST_RATE == 0)
 						&& (packet_count_audio
 								>= AUDIO_N_PACKETS
