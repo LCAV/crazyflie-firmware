@@ -16,7 +16,7 @@ OPENOCD           ?= openocd
 OPENOCD_INTERFACE ?= interface/stlink-v2.cfg
 OPENOCD_CMDS      ?=
 CROSS_COMPILE     ?= arm-none-eabi-
-PYTHON            ?= python
+PYTHON            ?= python3
 DFU_UTIL          ?= dfu-util
 CLOAD             ?= 1
 DEBUG             ?= 0
@@ -296,14 +296,21 @@ INCLUDES += -I$(LIB)/FatFS
 INCLUDES += -I$(LIB)/vl53l1
 INCLUDES += -I$(LIB)/vl53l1/core/inc
 
+CFLAGS += -g3
 ifeq ($(DEBUG), 1)
-  CFLAGS += -O0 -g3 -DDEBUG
+  CFLAGS += -O0 -DDEBUG
+
   # Prevent silent errors when converting between types (requires explicit casting)
   CFLAGS += -Wconversion
 else
-	# Fail on warnings
-  CFLAGS += -Os -g3 -Werror
+  CFLAGS += -Os
+
+  # Fail on warnings
+  CFLAGS += -Werror
 endif
+
+# Disable warnings for unaligned addresses in packed structs (added in GCC 9)
+CFLAGS += -Wno-address-of-packed-member
 
 ifeq ($(LTO), 1)
   CFLAGS += -flto

@@ -324,3 +324,8 @@ bool pulseProcessorV2ProcessPulse(pulseProcessor_t *state, const pulseProcessorF
     handleCalibrationData(state, frameData);
     return handleAngles(state, frameData, angles, baseStation, axis);
 }
+
+uint8_t pulseProcessorV2AnglesQuality() {
+    // TODO krri Implement when LH2 is more mature
+    return 0;
+}
