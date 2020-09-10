@@ -20,7 +20,7 @@ PYTHON            ?= python
 DFU_UTIL          ?= dfu-util
 CLOAD             ?= 1
 DEBUG             ?= 0
-CLOAD_SCRIPT      ?= python3 -m cfloader
+CLOAD_SCRIPT      ?= python -m cfloader
 CLOAD_CMDS        ?=
 CLOAD_ARGS        ?=
 PLATFORM          ?= cf2
@@ -403,6 +403,13 @@ size:
 cload:
 ifeq ($(CLOAD), 1)
 	$(CLOAD_SCRIPT) $(CLOAD_CMDS) flash $(CLOAD_ARGS) $(PROG).bin stm32-fw
+else
+	@echo "Only cload build can be bootloaded. Launch build and cload with CLOAD=1"
+endif
+
+cload_custom:
+ifeq ($(CLOAD), 1)
+	~/Virtualenvs/Crazyflie/bin/python -m cfloader $(CLOAD_CMDS) flash $(CLOAD_ARGS) $(PROG).bin stm32-fw
 else
 	@echo "Only cload build can be bootloaded. Launch build and cload with CLOAD=1"
 endif
