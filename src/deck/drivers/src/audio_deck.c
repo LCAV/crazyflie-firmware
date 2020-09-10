@@ -18,22 +18,7 @@
 
 #include "audio_deck.h"
 
-
-/////////////////////////////////////////////////////////////////////////////////
-/**
- *  Report from debugging session:
- *
- *  send_audio_enable | no  | yes | no
- *  receive_i2c       | yes | yes | yes
- *  send_i2c          | no  | no  | yes
- *
- */
-
 ////////////////////////////////////// DEFINES /////////////////////////////////
-
-// SPI stuff
-//#define CS_PIN DECK_GPIO_IO1
-
 
 // debugging
 //#define USE_TEST_SIGNALS
@@ -51,7 +36,8 @@
 #define N_MICS 4
 #define AUDIO_DECK_ADDRESS 47// I2C adress of the deck
 #define N_MOTORS 4
-#define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
+// TODO(FD) change back to 100
+#define AUDIO_TASK_FREQUENCY 10 // frequency at which packets are sent [Hz]
 #define I2C_REQUEST_RATE 6 // I2C is requested each 6 cycles of main task i.e. 60 ms = 6/100Hz
 #define SIZE_OF_PARAM_I2C 4 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, snr + propeller enable = 1
 
@@ -70,8 +56,8 @@
 #define FBINS_N_PACKETS (FBINS_N_PACKETS_FULL + 1)
 
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES)
-
-#define SPI_N_BYTES 1
+// because we have more bytes of audio data than parameter data
+#define SPI_N_BYTES TOTAL_N_BYTES
 
 
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
@@ -81,12 +67,7 @@ static enum{
   SEND_FBIN_PACKET
 } state = SEND_FIRST_PACKET;
 
-// DEBUGGING START
-uint32_t t1, t2;
-// DEBUGGING END
-
-
-static BYTE crtp_tx_buffer[AUDIO_N_BYTES]; // buffer with audio data to be sent through CRTP
+static uint8_t crtp_tx_buffer[AUDIO_N_BYTES]; // buffer with audio data to be sent through CRTP
 static float float_buffer_averaged[AUDIO_N_FLOATS]; // buffer where audio data is averaged
 static float float_buffer[AUDIO_N_FLOATS]; // buffer where audio data is converted to float
 
@@ -96,6 +77,8 @@ static bool isInit;
 
 static uint8_t packet_count_audio = 0;
 static uint8_t packet_count_fbins = 0;
+
+uint8_t tx_counter = 0;
 
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
@@ -118,13 +101,19 @@ static uint8_t ma_window = 4; // number of arrays averaged, maximum is 6 as 6*6 
 
 ////////////////////////////////////// SPI COMMUNICATION / ///////////////////////////////////
 
+//static uint16_t spi_speed = SPI_BAUDRATE_21MHZ;
+//static uint16_t spi_speed = SPI_BAUDRATE_6MHZ;
 static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 
+
 //TODO(FD) not sure if we need these temporary buffers
 static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
+
+// function declarations
+void fill_tx_buffer();
 
 static uint8_t spiReadWrite(void* data_read, const void* data_write, size_t data_length)
 {
@@ -132,6 +121,7 @@ static uint8_t spiReadWrite(void* data_read, const void* data_write, size_t data
   memcpy(temp_spi_tx_buffer, data_write, data_length);
   uint8_t success = spiExchange(data_length, temp_spi_tx_buffer, temp_spi_rx_buffer);
   memcpy(data_read, temp_spi_rx_buffer, data_length);
+  //uint8_t success = spiExchange(data_length, data_write, data_read);
   spiEndTransaction();
   return success;
 }
@@ -341,56 +331,65 @@ bool audio_deckTest(void){// deck test
 }
 
 void audio_deckTask(void* arg){ // main task
-  systemWaitStart();
-  TickType_t xLastWakeTime;
-  xLastWakeTime = xTaskGetTickCount();
 
-  if (use_iir) {
-	  spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
-      byte_array_to_float_array(float_buffer_averaged, spi_rx_buffer, AUDIO_N_FLOATS);
-  }
+	systemWaitStart();
+	TickType_t xLastWakeTime;
+	xLastWakeTime = xTaskGetTickCount();
+
+	if (use_iir) {
+		memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
+		spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
+		byte_array_to_float_array(float_buffer_averaged, spi_rx_buffer, AUDIO_N_FLOATS);
+	}
 
 
-  while (1) {
-      vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
+	while (1) {
+		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 
-	  vTaskDelay(M2T(300)); // wait for 0.3 seconds;
-	  DEBUG_PRINT("SPI start");
-	  memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
-	  memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
-	  spi_tx_buffer[0] = xTaskGetTickCount() % 0xFF;
-	  uint8_t success_readwrite = spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
-	  DEBUG_PRINT("SPI success %d: read %-4d, write %-4d \n", success_readwrite, spi_rx_buffer[0], spi_tx_buffer[0]);
+		DEBUG_PRINT("start");
+		if (debug) {
+			memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
+			memset(spi_tx_buffer, 0x03, SPI_N_BYTES);
+			spi_tx_buffer[0] = (tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
+			uint8_t success_readwrite = spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
+			DEBUG_PRINT("SPI success %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
+					success_readwrite,
+					(uint8_t) spi_rx_buffer[0],(uint8_t)  spi_rx_buffer[1],(uint8_t)  spi_rx_buffer[SPI_N_BYTES-1],
+					(uint8_t) spi_tx_buffer[0],(uint8_t) spi_tx_buffer[1], (uint8_t) spi_tx_buffer[SPI_N_BYTES-1]
+			);
+		}
+		else {
+			if (state == SEND_FIRST_PACKET){
+				if (send_audio_enable) {
+					float_array_to_byte_array(float_buffer_averaged, crtp_tx_buffer); // transfer the averaged audio
 
-      continue;
+					if (!use_iir) {
+						erase_buffer(float_buffer_averaged, AUDIO_N_FLOATS);
+					}
 
-      if (state == SEND_FIRST_PACKET){
 
-          if (send_audio_enable) {
-            float_array_to_byte_array(float_buffer_averaged, crtp_tx_buffer); // transfer the averaged audio
+					send_audio_packet(1); // first packet is sent in channel 1 (start condition)
+					state = SEND_AUDIO_PACKET;
+				}
+			}
+			else if(state == SEND_AUDIO_PACKET){
 
-            if (!use_iir) {
-                erase_buffer(float_buffer_averaged, AUDIO_N_FLOATS);
-            }
-            send_audio_packet(1); // first packet is sent in channel 1 (start condition)
-            state = SEND_AUDIO_PACKET;
-          }
-      }
-      else if(state == SEND_AUDIO_PACKET){
+				// TODO(FD): make sure below works for ma_window=1.
+				if ((packet_count_audio % I2C_REQUEST_RATE == 0) &&
+				(packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)){
+					// we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
+					DEBUG_PRINT("exchanging data");
+					exchange_data_audio_deck();
+				}
+				send_audio_packet(0);
 
-          // TODO(FD): make sure below works for ma_window=1.
-          if ((packet_count_audio % I2C_REQUEST_RATE == 0) &&
-              (packet_count_audio >= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)){
-              // we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
-              exchange_data_audio_deck();
-          }
-          send_audio_packet(0);
-
-      }
-      else if (state == SEND_FBIN_PACKET){
-          send_fbin_packet();
-      }
-  }
+			}
+			else if (state == SEND_FBIN_PACKET){
+				send_fbin_packet();
+			}
+		}
+	}
+	DEBUG_PRINT("WARNING: Exiting loop \n");
 }
 
 static const DeckDriver audio_deck = {
