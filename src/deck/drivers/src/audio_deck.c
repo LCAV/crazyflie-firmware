@@ -60,7 +60,7 @@
 
 ////////////////////////////////////// PRIVATE VARIABLES /////////////////////////////////
 static enum {
-	SEND_FIRST_PACKET, SEND_AUDIO_PACKET, SEND_FBIN_PACKET
+	SEND_FIRST_PACKET, SEND_FOLOWING_PACKETS, SEND_FBIN_PACKET
 } state = SEND_FIRST_PACKET;
 
 static uint8_t crtp_tx_buffer[AUDIO_N_BYTES]; // buffer with audio data to be sent through CRTP
@@ -391,24 +391,23 @@ void audio_deckTask(void *arg) { // main task
 					send_audio_packet(1); // first packet is sent in channel 1 (start condition)
 					state = SEND_AUDIO_PACKET;
 				}
-			} else if (state == SEND_AUDIO_PACKET) {
-
-				if ((packet_count_audio % I2C_REQUEST_RATE == 0)
-						&& (packet_count_audio	>= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)) {
-					// we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
-					DEBUG_PRINT("exchanging data \n");
-					exchange_data_audio_deck();
-				}
-
+			} else if (state == SEND_FOLOWING_PACKETS) {
 				if(send_audio_packet(0)){
 					state = SEND_FBIN_PACKET;
 				}
-
 			} else if (state == SEND_FBIN_PACKET) {
 				if(send_fbin_packet()){
 					state = SEND_FIRST_PACKET;
 				}
 			}
+		}
+
+		#define DECK_COMMUNICATION_PERIOD 100 // exchange rate between audio deck and CF
+
+		if(T2M(xTaskGetTickCount()) % DECK_COMMUNICATION_PERIOD){
+			// we average before sending, and calls are separated with DECK_COMMUNICATION_PERIOD cycles
+			DEBUG_PRINT("exchanging data \n");
+			exchange_data_audio_deck();
 		}
 	}
 	DEBUG_PRINT("WARNING: Exiting loop \n");
