@@ -213,7 +213,7 @@ void copy_buffer(uint16_t input[], uint16_t output[], uint8_t buffer_size) {
 	}
 }
 
-void send_audio_packet(uint8_t channel) {
+uint8_t send_audio_packet(uint8_t channel) {
 	static CRTPPacket signal_array_p;
 	signal_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, channel);
 	signal_array_p.size = CRTP_MAX_PAYLOAD;
@@ -222,13 +222,14 @@ void send_audio_packet(uint8_t channel) {
 		fill_packet_data_audio(signal_array_p.data, packet_count_audio,
 				AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
 		crtpSendPacket(&signal_array_p);
-		state = SEND_FBIN_PACKET;
 		packet_count_audio = 0;
+		return 1;
 	} else { // send full packet
 		fill_packet_data_audio(signal_array_p.data, packet_count_audio,
 				CRTP_MAX_PAYLOAD);
 		crtpSendPacket(&signal_array_p);
 		packet_count_audio++;
+		return 0;
 	}
 }
 
@@ -392,15 +393,16 @@ void audio_deckTask(void *arg) { // main task
 			} else if (state == SEND_AUDIO_PACKET) {
 
 				if ((packet_count_audio % I2C_REQUEST_RATE == 0)
-						&& (packet_count_audio
-								>= AUDIO_N_PACKETS
-										- I2C_REQUEST_RATE * ma_window
-								|| use_iir)) {
+						&& (packet_count_audio	>= AUDIO_N_PACKETS - I2C_REQUEST_RATE * ma_window || use_iir)) {
 					// we average before sending, and calls are separated with I2C_REQUEST_RATE cycles
 					DEBUG_PRINT("exchanging data \n");
 					exchange_data_audio_deck();
 				}
-				send_audio_packet(0);
+				uint8_t last_packet_sent = send_audio_packet(0);
+
+				if(last_packet_sent == 1){
+					state = SEND_FBIN_PACKET;
+				}
 
 			} else if (state == SEND_FBIN_PACKET) {
 				send_fbin_packet();
