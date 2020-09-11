@@ -233,7 +233,7 @@ uint8_t send_audio_packet(uint8_t channel) {
 	}
 }
 
-void send_fbin_packet() {
+uint8_t send_fbin_packet() {
 	static CRTPPacket fbin_array_p;
 	fbin_array_p.header = CRTP_HEADER(CRTP_PORT_AUDIO, 2);
 	fbin_array_p.size = CRTP_MAX_PAYLOAD;
@@ -243,12 +243,13 @@ void send_fbin_packet() {
 				FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
 		crtpSendPacket(&fbin_array_p);
 		packet_count_fbins = 0;
-		state = SEND_FIRST_PACKET;
+		return 1;
 	} else { // send full packet
 		fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins,
 				CRTP_MAX_PAYLOAD);
 		crtpSendPacket(&fbin_array_p);
 		packet_count_fbins++;
+		return 0;
 	}
 }
 
@@ -398,14 +399,15 @@ void audio_deckTask(void *arg) { // main task
 					DEBUG_PRINT("exchanging data \n");
 					exchange_data_audio_deck();
 				}
-				uint8_t last_packet_sent = send_audio_packet(0);
 
-				if(last_packet_sent == 1){
+				if(send_audio_packet(0)){
 					state = SEND_FBIN_PACKET;
 				}
 
 			} else if (state == SEND_FBIN_PACKET) {
-				send_fbin_packet();
+				if(send_fbin_packet()){
+					state = SEND_FIRST_PACKET;
+				}
 			}
 		}
 	}
