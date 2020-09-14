@@ -178,29 +178,6 @@ uint8_t send_fbin_packet() {
 	}
 }
 
-
-void fill_tx_buffer() {
-	if (filter_propellers_enable) {
-		uint16_t *motorPower_p = get_motor_power();
-		memcpy(motorPower_p, param_buffer_uint16, N_MOTORS*2);
-	} else {
-		for (int i = 0; i < N_MOTORS; i++) {
-			param_buffer_uint16[i] = (uint16_t) 0;
-		}
-	}
-
-	param_buffer_uint16[N_MOTORS] = min_freq;
-	param_buffer_uint16[N_MOTORS + 1] = max_freq;
-	param_buffer_uint16[N_MOTORS + 2] = delta_freq;
-	param_buffer_uint16[N_MOTORS + 3] = n_average;
-
-	uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
-	param_buffer_uint16[N_MOTORS + 4] = enables;
-
-	memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
-}
-
-
 /** Exchange current audio data from the audio deck (signals and frequency bins)
  *  and parameters.
  */
@@ -225,6 +202,27 @@ void exchange_data_audio_deck() {
 }
 
 //////////////////////////// CRAZYFLIE FUNCTIONS  ////////////////////////////////////
+
+
+void fill_tx_buffer() {
+	if (filter_propellers_enable) {
+		uint16_t *motorPower_p = get_motor_power();
+		memcpy(param_buffer_uint16, motorPower_p, N_MOTORS*2);
+	} else {
+		memset(param_buffer_uint16, 0x00, N_MOTORS*2);
+	}
+
+	param_buffer_uint16[N_MOTORS] = min_freq;
+	param_buffer_uint16[N_MOTORS + 1] = max_freq;
+	param_buffer_uint16[N_MOTORS + 2] = delta_freq;
+	param_buffer_uint16[N_MOTORS + 3] = n_average;
+
+	uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
+	param_buffer_uint16[N_MOTORS + 4] = enables;
+
+	memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
+}
+
 
 
 void audio_deckInit(DeckInfo *info) { // deck initialisation
