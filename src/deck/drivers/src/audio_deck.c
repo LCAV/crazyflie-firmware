@@ -32,12 +32,12 @@
 #define CRTP_MAX_PAYLOAD 29
 
 // audio deck parameters
-#define SYNCH_PIN DECK_GPIO_SDA
+#define SYNCH_PIN DECK_GPIO_IO4
 #define FFTSIZE 32
 #define N_MICS 4
 #define AUDIO_DECK_ADDRESS 47// I2C adress of the deck
 #define N_MOTORS 4
-#define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 200 // frequency at which packets are sent [Hz]
 #define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
 
 // buffer sizes
@@ -66,7 +66,7 @@ static bool isInit;
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
-uint8_t debug = 0; // enables DEBUG_PRINT
+uint8_t debug = 1; // enables DEBUG_PRINT
 static bool send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
 
 // frequency selection parameters
@@ -82,7 +82,7 @@ static enum {
 	SEND_FIRST_PACKET, SEND_FOLLOWING_PACKET, SEND_FBIN_PACKET
 } state = SEND_FIRST_PACKET;
 
-static uint8_t crtp_tx_buffer[TOTAL_N_BYTES]; // buffer with data to be sent through CRTP
+static uint8_t crtp_tx_buffer[SPI_N_BYTES]; // buffer with data to be sent through CRTP
 static uint16_t param_buffer_uint16[PARAM_N_INTS]; // buffer with the current parameters
 
 static uint8_t packet_count_audio = 0;
@@ -96,11 +96,11 @@ static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 
-uint8_t pin_state = 0;
+int pin_state = 0;
 
 //TODO(FD) not sure if we need these temporary buffers
-static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
-static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
+///static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
+//static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
 
 
 ////////////////////////////////////////// DEBUGGING  ///////////////////////////////////////
@@ -111,11 +111,11 @@ uint8_t tx_counter = 0;
 static uint8_t spiReadWrite(void *data_read, const void *data_write,
 		size_t data_length) {
 	spiBeginTransaction(spi_speed);
-	memcpy(temp_spi_tx_buffer, data_write, data_length);
-	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
-			temp_spi_rx_buffer);
-	memcpy(data_read, temp_spi_rx_buffer, data_length);
-	//uint8_t success = spiExchange(data_length, data_write, data_read);
+//	memcpy(temp_spi_tx_buffer, data_write, data_length);
+//	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
+//			temp_spi_rx_buffer);
+//	memcpy(data_read, temp_spi_rx_buffer, data_length);
+	uint8_t success = spiExchange(data_length, data_write, data_read);
 	spiEndTransaction();
 	return success;
 }
@@ -211,13 +211,15 @@ void exchange_data_audio_deck() {
 #else
 	fill_tx_buffer();
 	uint8_t success = spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
-
-	DEBUG_PRINT(
-			"SPI success %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
-			success, (uint8_t ) spi_rx_buffer[0],
-			(uint8_t ) spi_rx_buffer[1], (uint8_t) spi_rx_buffer[SPI_N_BYTES-1],
-			(uint8_t ) spi_tx_buffer[0], (uint8_t ) spi_tx_buffer[1],
-			(uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
+	if (!success) {
+		DEBUG_PRINT("!!!!! AUDIO SPI fail !!!!\n");
+	}
+//	DEBUG_PRINT(
+//			"SPI success %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
+//			success, (uint8_t ) spi_rx_buffer[0],
+//			(uint8_t ) spi_rx_buffer[1], (uint8_t) spi_rx_buffer[SPI_N_BYTES-1],
+//			(uint8_t ) spi_tx_buffer[0], (uint8_t ) spi_tx_buffer[1],
+//			(uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
 #endif
 }
 
@@ -252,27 +254,44 @@ void audio_deckTask(void *arg) { // main task
 
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
+	uint32_t t1, t2;
+
 
 	while (1) {
+		//DEBUG_PRINT("time is %d\n", T2M(xTaskGetTickCount()));
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 
 		if (debug) {
-			memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
-			memset(spi_tx_buffer, 0x04, SPI_N_BYTES);
-			spi_tx_buffer[0] = (tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
-			uint8_t success_readwrite = spiReadWrite(&spi_rx_buffer,
-					&spi_tx_buffer, SPI_N_BYTES);
-			DEBUG_PRINT(
-					"debug SPI success %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
-					success_readwrite, (uint8_t ) spi_rx_buffer[0],
-					(uint8_t ) spi_rx_buffer[1],
-					(uint8_t) spi_rx_buffer[SPI_N_BYTES-1],
-					(uint8_t ) spi_tx_buffer[0], (uint8_t ) spi_tx_buffer[1],
-					(uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
+			pin_state = digitalRead(SYNCH_PIN);
+			//pin_state = 1;
+			if (pin_state) {
+				memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
+				//memset(spi_tx_buffer, 0x04, SPI_N_BYTES);
+
+				for (int j = 0; j < SPI_N_BYTES; j++) {
+					spi_tx_buffer[j] = (uint8_t) (j % 0xFF);
+				}
+				spi_tx_buffer[0] = 0xDF; // 223//(tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
+
+				t1 = xTaskGetTickCount();
+				uint8_t success_readwrite = spiReadWrite(&spi_rx_buffer,
+						&spi_tx_buffer, SPI_N_BYTES);
+				t2 = xTaskGetTickCount();
+
+				DEBUG_PRINT(
+						"pin state 1, SPI success %d [%d], %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
+						success_readwrite, SPI_N_BYTES, T2M(t2-t1),
+						(uint8_t) spi_rx_buffer[0], (uint8_t) spi_rx_buffer[1], (uint8_t) spi_rx_buffer[SPI_N_BYTES-1],
+						(uint8_t) spi_tx_buffer[0], (uint8_t) spi_tx_buffer[1], (uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
+
+				//vTaskDelay(M2T(50));
+			}
+			else {
+				//DEBUG_PRINT("pin state 0 \n");
+			}
 		} else {
 
-			pin_state = digitalRead(SYNCH_PIN);
-			DEBUG_PRINT("SPI read pin state %d \n", pin_state);
+			//DEBUG_PRINT("SPI read pin state %d \n", pin_state);
 
 			if (pin_state) {
 				exchange_data_audio_deck();
@@ -282,13 +301,13 @@ void audio_deckTask(void *arg) { // main task
 				if (send_audio_enable) {
 
 					// fill the crtp_tx_buffer with what we have received so far
-					memcpy(crtp_tx_buffer, spi_rx_buffer, TOTAL_N_BYTES);
+					memcpy(crtp_tx_buffer, spi_rx_buffer, SPI_N_BYTES);
 
-					DEBUG_PRINT("Sending first audio packet; %d, %d, %d, %d \n",
-							(uint8_t) crtp_tx_buffer[0],
-							(uint8_t) crtp_tx_buffer[1],
-							(uint8_t) crtp_tx_buffer[2],
-							(uint8_t) crtp_tx_buffer[3]);
+				//	DEBUG_PRINT("Sending first audio packet; %d, %d, %d, %d \n",
+				//			(uint8_t) crtp_tx_buffer[0],
+				//			(uint8_t) crtp_tx_buffer[1],
+				//			(uint8_t) crtp_tx_buffer[2],
+				//			(uint8_t) crtp_tx_buffer[3]);
 
 					send_audio_packet(1); // first packet is sent in channel 1 (start condition)
 					state = SEND_FOLLOWING_PACKET;

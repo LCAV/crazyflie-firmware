@@ -264,7 +264,7 @@ bool spiExchange(size_t length, const uint8_t * data_tx, uint8_t * data_rx)
 void spiBeginTransaction(uint16_t baudRatePrescaler)
 {
   xSemaphoreTake(spiMutex, portMAX_DELAY);
-  spiConfigureWithSpeed(baudRatePrescaler);
+  //spiConfigureWithSpeed(baudRatePrescaler);
 }
 
 void spiEndTransaction()
