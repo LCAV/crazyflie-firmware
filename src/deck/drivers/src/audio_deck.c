@@ -249,13 +249,15 @@ void audio_deckTask(void *arg) { // main task
 	systemWaitStart();
 	TickType_t xLastWakeTime;
 	xLastWakeTime = xTaskGetTickCount();
+	DEBUG_PRINT("AUDIO task started \n");
 
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
 
 	while (1) {
+		DEBUG_PRINT("AUDIO test");
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-		DEBUG_PRINT("test");
+		DEBUG_PRINT("AUDIO test");
 
 		if (debug) {
 			memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
