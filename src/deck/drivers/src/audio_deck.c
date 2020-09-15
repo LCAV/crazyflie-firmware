@@ -22,6 +22,7 @@
 
 // debugging
 //#define USE_TEST_SIGNALS
+#define DEBUG_SPI
 #ifdef USE_TEST_SIGNALS
 #include "audio_debug_data.h"
 #endif
@@ -59,11 +60,15 @@
 // because we have more bytes of audio data than parameter data, +1 for checksum
 #define CHECKSUM_VALUE 0xAB
 #define CHECKSUM_LENGTH 1
-#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
 
+
+#ifdef DEBUG_SPI
+#define SPI_N_BYTES 100
+#else
+#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
+#endif
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
-
 
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
@@ -116,22 +121,19 @@ static uint8_t spiReadWrite(void *data_read, const void *data_write,
 	memcpy(temp_spi_tx_buffer, data_write, data_length);
 	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
 			temp_spi_rx_buffer);
-	memcpy(data_read, temp_spi_rx_buffer, data_length);
 	//uint8_t success = spiExchange(data_length, data_write, data_read);
 	spiEndTransaction();
+	memcpy(data_read, temp_spi_rx_buffer, data_length);
 	return success;
 }
 
 static uint8_t spiRead(void *data_read, size_t data_length) {
 	spiBeginTransaction(spi_speed);
-	//memcpy(temp_spi_tx_buffer, data_write, data_length);
 	memset(temp_spi_tx_buffer, 0, data_length);
 	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
 			temp_spi_rx_buffer);
-	//uint8_t success = spiExchange(data_length, data_write, data_read);
 	spiEndTransaction();
 	memcpy(data_read, temp_spi_rx_buffer, data_length);
-	DEBUG_PRINT("%d, %d, ... %d \n", temp_spi_rx_buffer[0], temp_spi_rx_buffer[0], temp_spi_rx_buffer[data_length-1]);
 	return success;
 }
 
@@ -141,8 +143,6 @@ static uint8_t spiWrite(const void *data_write,
 	memcpy(temp_spi_tx_buffer, data_write, data_length);
 	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
 			temp_spi_rx_buffer);
-	//memcpy(data_read, temp_spi_rx_buffer, data_length);
-	//uint8_t success = spiExchange(data_length, data_write, data_read);
 	spiEndTransaction();
 	return success;
 }
@@ -153,7 +153,9 @@ static uint8_t spiWrite(const void *data_write,
  */
 void fill_packet_data_fbins(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size) {
 	for (uint8_t i = 0; i < packet_size; i++) {
+#ifndef DEBUG_SPI
 		packet_data[i] = crtp_tx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
+#endif
 	}
 }
 
@@ -223,7 +225,9 @@ void fill_tx_buffer() {
 	uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
 	param_buffer_uint16[N_MOTORS + 4] = enables;
 
+#ifndef DEBUG_SPI
 	memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
+#endif
 }
 
 /** Exchange current audio data from the audio deck (signals and frequency bins)
@@ -285,8 +289,10 @@ void audio_deckTask(void *arg) { // main task
 	uint32_t t1 = 0;
 	uint32_t t2 = 0;
 
-	for (int j = 0; j < SPI_N_BYTES-1; j++) {
-		spi_tx_buffer[j] = (uint8_t) (j % 0xFF);
+	int i = 0;
+	for (int j = SPI_N_BYTES; j > 0;  j--) {
+		spi_tx_buffer[i] = (uint8_t) (j % 0xFF);
+		i++;
 	}
 	spi_tx_buffer[0] = 0xDF; // 223//(tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
 	spi_tx_buffer[SPI_N_BYTES-1] = CHECKSUM_VALUE;
@@ -300,28 +306,27 @@ void audio_deckTask(void *arg) { // main task
 			memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
 
 			t1 = xTaskGetTickCount();
-//				uint8_t success_readwrite = spiReadWrite(spi_rx_buffer,
-//						spi_tx_buffer, SPI_N_BYTES);
 			uint8_t counter = 0;
 			uint8_t success = 0;
-			while (digitalRead(SYNCH_PIN)) {
-				if (counter == 0) {
-					//success_write = spiWrite(spi_tx_buffer, SPI_N_BYTES);
-					//success = spiRead(spi_rx_buffer, SPI_N_BYTES);
-					success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
-					//if (spi_rx_buffer[SPI_N_BYTES-1] == CHECKSUM_VALUE) {
-				}
-				counter ++;
+//			while (digitalRead(SYNCH_PIN)) {
+//				if (counter == 0) {
+//					//success = spiWrite(spi_tx_buffer, SPI_N_BYTES);
+//					success = spiRead(spi_rx_buffer, SPI_N_BYTES);
+//					//success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
+//					//if (spi_rx_buffer[SPI_N_BYTES-1] == CHECKSUM_VALUE) {
+//				}
+//				counter ++;
+//			}
+			if (digitalRead(SYNCH_PIN)) {
+				success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
 			}
-			//uint8_t success_read = spiRead(spi_rx_buffer,
-			//		 SPI_N_BYTES);
 			t2 = xTaskGetTickCount();
 			if (success) {
 				DEBUG_PRINT(
-						"pin state 1, SPI success %d, counter: %d, %d: data [%4d,%4d,...,%4d]\n",
+						"pin state 1, SPI success %d, counter: %d, %d: data write [%4d,%4d,%4d,%4d,%4d], data read [%4d,%4d,%4d,%4d,%4d]\n",
 						success, counter, T2M(t2-t1),
-						//(uint8_t) spi_tx_buffer[0], (uint8_t) spi_tx_buffer[1], (uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
-						spi_rx_buffer[0], spi_rx_buffer[1], spi_rx_buffer[SPI_N_BYTES-1]);
+						spi_tx_buffer[0], spi_tx_buffer[1], spi_tx_buffer[2], spi_tx_buffer[3], spi_tx_buffer[SPI_N_BYTES-1],
+						spi_rx_buffer[0], spi_rx_buffer[1], spi_rx_buffer[2], spi_rx_buffer[3], spi_rx_buffer[SPI_N_BYTES-1]);
 			}
 				//vTaskDelay(M2T(50));
 		} else {
