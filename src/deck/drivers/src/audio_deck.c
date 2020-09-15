@@ -37,7 +37,7 @@
 #define N_MICS 4
 #define AUDIO_DECK_ADDRESS 47// I2C adress of the deck
 #define N_MOTORS 4
-#define AUDIO_TASK_FREQUENCY 200 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
 #define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
 
 // buffer sizes
@@ -56,8 +56,10 @@
 
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES)
 
-// because we have more bytes of audio data than parameter data
-#define SPI_N_BYTES TOTAL_N_BYTES
+// because we have more bytes of audio data than parameter data, +1 for checksum
+#define CHECKSUM_VALUE 0xAB
+#define CHECKSUM_LENGTH 1
+#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
 
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
@@ -99,8 +101,8 @@ static uint8_t spi_rx_buffer[SPI_N_BYTES];
 int pin_state = 0;
 
 //TODO(FD) not sure if we need these temporary buffers
-///static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
-//static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
+static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
+static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
 
 
 ////////////////////////////////////////// DEBUGGING  ///////////////////////////////////////
@@ -111,14 +113,40 @@ uint8_t tx_counter = 0;
 static uint8_t spiReadWrite(void *data_read, const void *data_write,
 		size_t data_length) {
 	spiBeginTransaction(spi_speed);
-//	memcpy(temp_spi_tx_buffer, data_write, data_length);
-//	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
-//			temp_spi_rx_buffer);
-//	memcpy(data_read, temp_spi_rx_buffer, data_length);
-	uint8_t success = spiExchange(data_length, data_write, data_read);
+	memcpy(temp_spi_tx_buffer, data_write, data_length);
+	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
+			temp_spi_rx_buffer);
+	memcpy(data_read, temp_spi_rx_buffer, data_length);
+	//uint8_t success = spiExchange(data_length, data_write, data_read);
 	spiEndTransaction();
 	return success;
 }
+
+static uint8_t spiRead(void *data_read, size_t data_length) {
+	spiBeginTransaction(spi_speed);
+	//memcpy(temp_spi_tx_buffer, data_write, data_length);
+	memset(temp_spi_tx_buffer, 0, data_length);
+	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
+			temp_spi_rx_buffer);
+	//uint8_t success = spiExchange(data_length, data_write, data_read);
+	spiEndTransaction();
+	memcpy(data_read, temp_spi_rx_buffer, data_length);
+	DEBUG_PRINT("%d, %d, ... %d \n", temp_spi_rx_buffer[0], temp_spi_rx_buffer[0], temp_spi_rx_buffer[data_length-1]);
+	return success;
+}
+
+static uint8_t spiWrite(const void *data_write,
+		size_t data_length) {
+	spiBeginTransaction(spi_speed);
+	memcpy(temp_spi_tx_buffer, data_write, data_length);
+	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
+			temp_spi_rx_buffer);
+	//memcpy(data_read, temp_spi_rx_buffer, data_length);
+	//uint8_t success = spiExchange(data_length, data_write, data_read);
+	spiEndTransaction();
+	return success;
+}
+
 
 /**
  *  Fill frequency data after the audio data in the CRTP packet.
@@ -254,44 +282,56 @@ void audio_deckTask(void *arg) { // main task
 
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
-	uint32_t t1, t2;
+	uint32_t t1 = 0;
+	uint32_t t2 = 0;
 
+	for (int j = 0; j < SPI_N_BYTES-1; j++) {
+		spi_tx_buffer[j] = (uint8_t) (j % 0xFF);
+	}
+	spi_tx_buffer[0] = 0xDF; // 223//(tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
+	spi_tx_buffer[SPI_N_BYTES-1] = CHECKSUM_VALUE;
 
 	while (1) {
 		//DEBUG_PRINT("time is %d\n", T2M(xTaskGetTickCount()));
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 
 		if (debug) {
-			pin_state = digitalRead(SYNCH_PIN);
-			//pin_state = 1;
-			if (pin_state) {
-				memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
-				//memset(spi_tx_buffer, 0x04, SPI_N_BYTES);
+			//memset(spi_tx_buffer, 0x04, SPI_N_BYTES);
+			memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
 
-				for (int j = 0; j < SPI_N_BYTES; j++) {
-					spi_tx_buffer[j] = (uint8_t) (j % 0xFF);
+			t1 = xTaskGetTickCount();
+//				uint8_t success_readwrite = spiReadWrite(spi_rx_buffer,
+//						spi_tx_buffer, SPI_N_BYTES);
+			uint8_t counter = 0;
+			uint8_t success = 0;
+			while (digitalRead(SYNCH_PIN)) {
+				if (counter == 0) {
+					//success_write = spiWrite(spi_tx_buffer, SPI_N_BYTES);
+					//success = spiRead(spi_rx_buffer, SPI_N_BYTES);
+					success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
+					//if (spi_rx_buffer[SPI_N_BYTES-1] == CHECKSUM_VALUE) {
 				}
-				spi_tx_buffer[0] = 0xDF; // 223//(tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
-
-				t1 = xTaskGetTickCount();
-				uint8_t success_readwrite = spiReadWrite(&spi_rx_buffer,
-						&spi_tx_buffer, SPI_N_BYTES);
-				t2 = xTaskGetTickCount();
-
+				counter ++;
+			}
+			//uint8_t success_read = spiRead(spi_rx_buffer,
+			//		 SPI_N_BYTES);
+			t2 = xTaskGetTickCount();
+			if (success) {
 				DEBUG_PRINT(
-						"pin state 1, SPI success %d [%d], %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
-						success_readwrite, SPI_N_BYTES, T2M(t2-t1),
-						(uint8_t) spi_rx_buffer[0], (uint8_t) spi_rx_buffer[1], (uint8_t) spi_rx_buffer[SPI_N_BYTES-1],
-						(uint8_t) spi_tx_buffer[0], (uint8_t) spi_tx_buffer[1], (uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
-
+						"pin state 1, SPI success %d, counter: %d, %d: data [%4d,%4d,...,%4d]\n",
+						success, counter, T2M(t2-t1),
+						//(uint8_t) spi_tx_buffer[0], (uint8_t) spi_tx_buffer[1], (uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
+						spi_rx_buffer[0], spi_rx_buffer[1], spi_rx_buffer[SPI_N_BYTES-1]);
+			}
 				//vTaskDelay(M2T(50));
-			}
-			else {
-				//DEBUG_PRINT("pin state 0 \n");
-			}
 		} else {
-
-			//DEBUG_PRINT("SPI read pin state %d \n", pin_state);
+			//TODO(FD) remove!!!
+			//memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
+			uint8_t success_write = spiWrite(spi_tx_buffer, SPI_N_BYTES);
+			uint8_t success_read = spiRead(spi_rx_buffer, SPI_N_BYTES);
+			success_write = success_write;
+			success_write = success_read;
+			//if (spi_rx_buffer[SPI_N_BYTES-1] == CHECKSUM_VALUE) {
 
 			if (pin_state) {
 				exchange_data_audio_deck();
