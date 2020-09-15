@@ -22,7 +22,7 @@
 
 // debugging
 //#define USE_TEST_SIGNALS
-#define DEBUG_SPI
+//#define DEBUG_SPI
 #ifdef USE_TEST_SIGNALS
 #include "audio_debug_data.h"
 #endif
@@ -73,14 +73,14 @@ static bool isInit;
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
-uint8_t debug = 1; // enables DEBUG_PRINT
+uint8_t debug = 0;
 static bool send_audio_enable = 0; // enables the sending of CRTP packets with the audio data
 
 // frequency selection parameters
 static uint16_t min_freq = 100;
 static uint16_t max_freq = 10000;
 static uint16_t delta_freq = 100;
-static uint16_t n_average = 1; // number of arrays averaged, maximum is 6 as 6*6 = 36 = AUDIO_N_PACKETS
+static uint16_t n_average = 1;
 static bool filter_propellers_enable = 0;
 static bool filter_snr_enable = 0;
 
@@ -227,6 +227,7 @@ void fill_tx_buffer() {
 
 #ifndef DEBUG_SPI
 	memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
+	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 #endif
 }
 
@@ -241,17 +242,10 @@ void exchange_data_audio_deck() {
 	uint_array_to_byte_array(frequencies, spi_rx_buffer[AUDIO_N_BYTES]);
 	uint8_t success = 1;
 #else
-	fill_tx_buffer();
-	uint8_t success = spiReadWrite(&spi_rx_buffer, &spi_tx_buffer, SPI_N_BYTES);
+	uint8_t success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
 	if (!success) {
 		DEBUG_PRINT("!!!!! AUDIO SPI fail !!!!\n");
 	}
-//	DEBUG_PRINT(
-//			"SPI success %d: read [%4d,%4d,...,%4d] write [%4d,%4d,...,%4d] \n",
-//			success, (uint8_t ) spi_rx_buffer[0],
-//			(uint8_t ) spi_rx_buffer[1], (uint8_t) spi_rx_buffer[SPI_N_BYTES-1],
-//			(uint8_t ) spi_tx_buffer[0], (uint8_t ) spi_tx_buffer[1],
-//			(uint8_t) spi_tx_buffer[SPI_N_BYTES-1]);
 #endif
 }
 
@@ -264,6 +258,8 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 	DEBUG_PRINT("AUDIO INIT\n");
 
 	spiBegin();
+
+	pinMode(SYNCH_PIN, INPUT);
 
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
 			AUDIO_TASK_PRI, NULL);
@@ -285,10 +281,13 @@ void audio_deckTask(void *arg) { // main task
 	DEBUG_PRINT("AUDIO TASK_STARTED \n");
 
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
+	fill_tx_buffer();
+
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
 	uint32_t t1 = 0;
 	uint32_t t2 = 0;
 
+#ifdef DEBUG_SPI
 	int i = 0;
 	for (int j = SPI_N_BYTES; j > 0;  j--) {
 		spi_tx_buffer[i] = (uint8_t) (j % 0xFF);
@@ -296,9 +295,9 @@ void audio_deckTask(void *arg) { // main task
 	}
 	spi_tx_buffer[0] = 0xDF; // 223//(tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
 	spi_tx_buffer[SPI_N_BYTES-1] = CHECKSUM_VALUE;
+#endif
 
 	while (1) {
-		//DEBUG_PRINT("time is %d\n", T2M(xTaskGetTickCount()));
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 
 		if (debug) {
@@ -319,6 +318,8 @@ void audio_deckTask(void *arg) { // main task
 //			}
 			if (digitalRead(SYNCH_PIN)) {
 				success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
+				success = spiRead(spi_rx_buffer, SPI_N_BYTES);
+				success = spiWrite(spi_tx_buffer, SPI_N_BYTES);
 			}
 			t2 = xTaskGetTickCount();
 			if (success) {
@@ -328,22 +329,19 @@ void audio_deckTask(void *arg) { // main task
 						spi_tx_buffer[0], spi_tx_buffer[1], spi_tx_buffer[2], spi_tx_buffer[3], spi_tx_buffer[SPI_N_BYTES-1],
 						spi_rx_buffer[0], spi_rx_buffer[1], spi_rx_buffer[2], spi_rx_buffer[3], spi_rx_buffer[SPI_N_BYTES-1]);
 			}
-				//vTaskDelay(M2T(50));
-		} else {
-			//TODO(FD) remove!!!
-			//memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
-			uint8_t success_write = spiWrite(spi_tx_buffer, SPI_N_BYTES);
-			uint8_t success_read = spiRead(spi_rx_buffer, SPI_N_BYTES);
-			success_write = success_write;
-			success_write = success_read;
-			//if (spi_rx_buffer[SPI_N_BYTES-1] == CHECKSUM_VALUE) {
 
-			if (pin_state) {
+		} else {
+
+			fill_tx_buffer();
+			if (digitalRead(SYNCH_PIN)) {
 				exchange_data_audio_deck();
 			}
 
 			if (state == SEND_FIRST_PACKET) {
 				if (send_audio_enable) {
+
+					DEBUG_PRINT("filter_snr_enable: %d \n", spi_tx_buffer[PARAM_N_BYTES - 2]);
+					DEBUG_PRINT("filter_prop_enable: %d \n", spi_tx_buffer[PARAM_N_BYTES - 1]);
 
 					// fill the crtp_tx_buffer with what we have received so far
 					memcpy(crtp_tx_buffer, spi_rx_buffer, SPI_N_BYTES);
