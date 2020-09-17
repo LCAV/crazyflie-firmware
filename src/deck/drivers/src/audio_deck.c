@@ -171,6 +171,7 @@ void fill_packet_data_fbins(uint8_t packet_data[], uint8_t packet_count, uint8_t
 		packet_data[i] = crtp_tx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
 #endif
 	}
+	//memcpy(packet_data, &crtp_tx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD], packet_size);
 }
 
 /**
@@ -180,6 +181,7 @@ void fill_packet_data_audio(uint8_t packet_data[], uint8_t packet_count, uint8_t
 	for (uint8_t i = 0; i < packet_size; i++) {
 		packet_data[i] = crtp_tx_buffer[packet_count * CRTP_MAX_PAYLOAD + i];
 	}
+	//memcpy(packet_data, &crtp_tx_buffer[packet_count * CRTP_MAX_PAYLOAD], packet_size);
 }
 
 uint8_t send_audio_packet(uint8_t channel) {
@@ -260,17 +262,28 @@ bool exchange_data_audio_deck() {
 
 #ifdef USE_TEST_SIGNALS
 	vTaskDelay(M2T(100)); // ms
-	float_array_to_byte_array(audio_data, spi_rx_buffer);
-	uint_array_to_byte_array(frequencies, spi_rx_buffer[AUDIO_N_BYTES]);
+	// TODO(FD): check that this conversino works properly.
+	memcpy(spi_rx_buffer, audio_data, AUDIO_N_BYTES);
+	memcpy(spi_rx_buffer[AUDIO_N_BYTES], frequencies, FBINS_N_BYTES);
 	return 1;
 #else
+
+	spiBeginTransaction(spi_speed);
+
 
 #ifdef SYNCH_CHECK
 	uint8_t tx_synch = 0xDF;
 	uint8_t rx_synch = 0;
-	spiReadWrite(&rx_synch, &tx_synch, 1);
+	//spiReadWrite(&rx_synch, &tx_synch, 1);
+	spiExchange(1, &tx_synch, &rx_synch);
+
 #endif
-	spiReadWrite(temp_spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
+
+	//spiReadWrite(temp_spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
+	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
+
+	spiEndTransaction();
+
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
 		memcpy(spi_rx_buffer, temp_spi_rx_buffer, SPI_N_BYTES);
