@@ -193,18 +193,24 @@ uint8_t send_audio_packet(uint8_t channel) {
 		fill_packet_data_audio(signal_array_p.data, packet_count_audio,
 				AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
 		if (crtpSendPacket(&signal_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("Warning: could not send audio packet %d\n", packet_count_audio);
+			DEBUG_PRINT("errQUEUE_FULL audio packet %d\n", packet_count_audio);
+			return 0;
 		}
-		packet_count_audio = 0;
-		return 1;
+		else {
+			packet_count_audio = 0;
+			return 1;
+		}
 	} else { // send full packet
 		fill_packet_data_audio(signal_array_p.data, packet_count_audio,
 				CRTP_MAX_PAYLOAD);
 		if (crtpSendPacket(&signal_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("Warning: could not send audio packet %d\n", packet_count_audio);
+			DEBUG_PRINT("errQUEUE_FULL audio packet %d\n", packet_count_audio);
+			return 0;
 		}
-		packet_count_audio++;
-		return 0;
+		else {
+			packet_count_audio++;
+			return 0;
+		}
 	}
 }
 
@@ -217,18 +223,24 @@ uint8_t send_fbin_packet() {
 		fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins,
 				FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
 		if (crtpSendPacket(&fbin_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("Warning: could not send fbins packet %d\n", packet_count_fbins);
+			DEBUG_PRINT("errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
+			return 0;
 		}
-		packet_count_fbins = 0;
-		return 1;
+		else {
+			packet_count_fbins = 0;
+			return 1;
+		}
 	} else { // send full packet
 		fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins,
 				CRTP_MAX_PAYLOAD);
 		if (crtpSendPacket(&fbin_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("Warning: could not send fbins packet %d\n", packet_count_fbins);
+			DEBUG_PRINT("errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
+			return 0;
 		}
-		packet_count_fbins++;
-		return 0;
+		else {
+			packet_count_fbins++;
+			return 0;
+		}
 	}
 }
 
