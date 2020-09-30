@@ -110,12 +110,17 @@ void powerDistribution(const control_t *control)
     motorsSetRatio(MOTOR_M4, motorPower.m4);
   }
 }
+
+// TODO(FD) instead of reading motorPowerSet, we should read the
+// motorPower value, and set it correctly in motorSetEnable mode.
+// We are not doing that for now because it requires more changes
+// in the firmware than below version.
 uint16_t * get_motor_power(void){
     static uint16_t motorPower_array[4];
-    motorPower_array[0] = motorPower.m1;
-    motorPower_array[1] = motorPower.m2;
-    motorPower_array[2] = motorPower.m3;
-    motorPower_array[3] = motorPower.m4;
+    motorPower_array[0] = motorPowerSet.m1;
+    motorPower_array[1] = motorPowerSet.m2;
+    motorPower_array[2] = motorPowerSet.m3;
+    motorPower_array[3] = motorPowerSet.m4;
     return motorPower_array;
 }
 PARAM_GROUP_START(motorPowerSet)
