@@ -51,9 +51,9 @@
 //
 // Observations:
 // at 1000 we have packet loss
-// at 500 we sometimes have packet loss
-// at 500 we have an update rate of ca. 3 Hz, which is the best we found so far.
-#define AUDIO_TASK_FREQUENCY 500 // frequency at which packets are sent [Hz]
+// at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz, which is the best we found so far.
+// at 300
+#define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
 #define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
 
 // buffer sizes
