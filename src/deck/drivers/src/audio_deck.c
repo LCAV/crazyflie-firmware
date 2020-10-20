@@ -70,6 +70,17 @@
 #define FBINS_N_PACKETS_FULL (int) FBINS_N_BYTES / CRTP_MAX_PAYLOAD
 #define FBINS_N_PACKETS (FBINS_N_PACKETS_FULL + 1) // 3
 
+#define TIMESTAMP_LENGTH_BYTE 4
+/*
+#define CHECKSUM_VALUE 	0xAB
+#define CHECKSUM_LENGTH 1
+
+#ifdef DEBUG_SPI
+#define SPI_N_BYTES 100
+#else
+#define SPI_N_BYTES (AUDIO_N_BYTES + FBINS_N_BYTES + CHECKSUM_LENGTH + TIMESTAMP_LENGTH)
+#endif
+*/
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES)
 
 // because we have more bytes of audio data than parameter data, +1 for checksum
@@ -80,7 +91,7 @@
 #ifdef DEBUG_SPI
 #define SPI_N_BYTES 100
 #else
-#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
+#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH+TIMESTAMP_LENGTH_BYTE)
 #endif
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
