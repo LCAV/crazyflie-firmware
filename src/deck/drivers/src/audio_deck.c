@@ -32,7 +32,7 @@
 // constants
 #define INT16_PRECISION 2 // int16 = 2 bytes
 #define FLOAT_PRECISION 4// float32 = 4 bytes
-#define CRTP_MAX_PAYLOAD 29
+#define CRTP_MAX_PAYLOAD 29 // data bytes per crtp packet
 
 // audio deck parameters
 #define SYNCH_PIN DECK_GPIO_IO4
@@ -51,8 +51,8 @@
 //
 // Observations:
 // at 1000 we have packet loss
-// at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz, which is the best we found so far.
-// at 300
+// at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz.
+// at 300 we have an even higher rate of almost 7Hz
 #define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
 #define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
 
@@ -60,28 +60,19 @@
 #define PARAM_N_INTS (N_MOTORS + SIZE_OF_PARAM_I2C) // in uint16, n_motors for the current trhust commands
 #define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION) // 14 bytes
 
-#define AUDIO_N_FLOATS N_MICS * FFTSIZE * 2 // *2 for complex numbers
+#define AUDIO_N_FLOATS (N_MICS * FFTSIZE * 2) // *2 for complex numbers
 #define AUDIO_N_BYTES (AUDIO_N_FLOATS * FLOAT_PRECISION)
-#define AUDIO_N_PACKETS_FULL (int) AUDIO_N_BYTES / CRTP_MAX_PAYLOAD
+#define AUDIO_N_PACKETS_FULL ((int) AUDIO_N_BYTES / CRTP_MAX_PAYLOAD)
 #define AUDIO_N_PACKETS (AUDIO_N_PACKETS_FULL + 1) // 36
 
+// We add the timestamp (float32) at the end of the fbins data.
+#define TIMESTAMP_N_BYTES 4
 #define FBINS_N_INTS FFTSIZE
-#define FBINS_N_BYTES FBINS_N_INTS * INT16_PRECISION
-#define FBINS_N_PACKETS_FULL (int) FBINS_N_BYTES / CRTP_MAX_PAYLOAD
+#define FBINS_N_BYTES (FBINS_N_INTS * INT16_PRECISION + TIMESTAMP_N_BYTES)
+#define FBINS_N_PACKETS_FULL ((int) FBINS_N_BYTES / CRTP_MAX_PAYLOAD)
 #define FBINS_N_PACKETS (FBINS_N_PACKETS_FULL + 1) // 3
 
-#define TIMESTAMP_LENGTH_BYTE 4
-/*
-#define CHECKSUM_VALUE 	0xAB
-#define CHECKSUM_LENGTH 1
-
-#ifdef DEBUG_SPI
-#define SPI_N_BYTES 100
-#else
-#define SPI_N_BYTES (AUDIO_N_BYTES + FBINS_N_BYTES + CHECKSUM_LENGTH + TIMESTAMP_LENGTH)
-#endif
-*/
-#define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES)
+#define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES) // 1092
 
 // because we have more bytes of audio data than parameter data, +1 for checksum
 #define CHECKSUM_VALUE 0xAB
@@ -91,7 +82,7 @@
 #ifdef DEBUG_SPI
 #define SPI_N_BYTES 100
 #else
-#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH+TIMESTAMP_LENGTH_BYTE)
+#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
 #endif
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
