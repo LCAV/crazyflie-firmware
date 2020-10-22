@@ -283,7 +283,7 @@ bool exchange_data_audio_deck() {
 #else
 
 	spiBeginTransaction(spi_speed);
-
+	digitalWrite(SYNCH_PIN, 0);
 
 #ifdef SYNCH_CHECK
 	uint8_t tx_synch = 0xDF;
@@ -297,6 +297,8 @@ bool exchange_data_audio_deck() {
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
 
 	spiEndTransaction();
+	digitalWrite(SYNCH_PIN, 0);
+
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
@@ -396,14 +398,14 @@ void audio_deckTask(void *arg) { // main task
 			fill_tx_buffer();
 
 			// always read the audio deck to increase the success rate.
-			if (digitalRead(SYNCH_PIN)) {
+			//if (digitalRead(SYNCH_PIN)) {
 				if (exchange_data_audio_deck()) {
 					new_data_to_send = true;
 				}
 				else {
 					//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
 				}
-			}
+			//}
 
 			if (state == SEND_FIRST_PACKET) {
 				if (send_audio_enable && new_data_to_send) {
