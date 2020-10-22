@@ -302,8 +302,12 @@ bool exchange_data_audio_deck() {
 
 #endif
 
-	//spiReadWrite(temp_spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
+	// Todo: Add #define for chip selec pin
+	digitalWrite(DECK_GPIO_IO4, 0);
+
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
+
+	digitalWrite(DECK_GPIO_IO4, 1);
 
 	spiEndTransaction();
 
@@ -405,14 +409,14 @@ void audio_deckTask(void *arg) { // main task
 			fill_tx_buffer();
 
 			// always read the audio deck to increase the success rate.
-			if (digitalRead(SYNCH_PIN)) {
+			//if (digitalRead(SYNCH_PIN)) {
 				if (exchange_data_audio_deck()) {
 					new_data_to_send = true;
 				}
 				else {
 					//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
 				}
-			}
+			//}
 
 			if (state == SEND_FIRST_PACKET) {
 				if (send_audio_enable && new_data_to_send) {
