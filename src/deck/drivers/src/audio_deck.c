@@ -78,6 +78,7 @@
 #define CHECKSUM_VALUE 0xAB
 #define CHECKSUM_LENGTH 1
 
+#define MULTIPLIER 10 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
 #ifdef DEBUG_SPI
 #define SPI_N_BYTES 100
@@ -90,7 +91,6 @@ static bool isInit;
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
-uint8_t debug = false;
 static bool send_audio_enable = false; // enables the sending of CRTP packets with the audio data
 static bool new_data_to_send = false;
 
@@ -119,50 +119,12 @@ static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
-
-int pin_state = 0;
+static int multiplier = 0;
 
 ////////////////////////////////////////// DEBUGGING  ///////////////////////////////////////
 uint8_t tx_counter = 0;
 
 /////////////////////////////// AUDIO DECK FUNCTIONS  ///////////////////////////////////////
-
-void spiReadWrite(uint8_t *data_read, const uint8_t *data_write, size_t data_length) {
-	spiBeginTransaction(spi_speed);
-	// Removing the temporary buffers below increased the publishing rate.
-	//memcpy(temp_spi_tx_buffer, data_write, data_length);
-	//uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
-	//		temp_spi_rx_buffer);
-	spiExchange(data_length, data_write, data_read);
-	spiEndTransaction();
-}
-
-// TODO(FD) below functions are not really needed anymore, but we keep them
-// for debugging.
-
-static uint8_t temp_spi_tx_buffer[SPI_N_BYTES];
-
-
-static uint8_t spiRead(void *data_read, size_t data_length) {
-	spiBeginTransaction(spi_speed);
-	memset(temp_spi_tx_buffer, 0, data_length);
-	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
-			temp_spi_rx_buffer);
-	spiEndTransaction();
-	memcpy(data_read, temp_spi_rx_buffer, data_length);
-	return success;
-}
-
-static uint8_t spiWrite(const void *data_write,
-		size_t data_length) {
-	spiBeginTransaction(spi_speed);
-	memcpy(temp_spi_tx_buffer, data_write, data_length);
-	uint8_t success = spiExchange(data_length, temp_spi_tx_buffer,
-			temp_spi_rx_buffer);
-	spiEndTransaction();
-	return success;
-}
-
 
 /**
  *  Fill frequency data after the audio data in the CRTP packet.
@@ -282,23 +244,31 @@ bool exchange_data_audio_deck() {
 	return 1;
 #else
 
+	//digitalWrite(SYNCH_PIN, 0);
 	spiBeginTransaction(spi_speed);
-	digitalWrite(SYNCH_PIN, 0);
 
 #ifdef SYNCH_CHECK
-	uint8_t tx_synch = 0xDF;
-	uint8_t rx_synch = 0;
-	//spiReadWrite(&rx_synch, &tx_synch, 1);
-	spiExchange(1, &tx_synch, &rx_synch);
+	//uint8_t tx_synch = 0xDF;
+	//uint8_t rx_synch = 0;
+	//spiExchange(1, &tx_synch, &rx_synch);
 
+	uint8_t rx_synch = 0;
+	uint8_t tx_synch = 0;
+	uint32_t waiting = 0;
+	uint32_t timeout = 100000;
+	while (rx_synch != 0xDF) {
+		spiExchange(1, &tx_synch, &rx_synch);
+		waiting += 1;
+		if (waiting > timeout)
+			break;
+	}
+	waiting = 0;
 #endif
 
-	//spiReadWrite(temp_spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
 
 	spiEndTransaction();
-	digitalWrite(SYNCH_PIN, 0);
-
+	//digitalWrite(SYNCH_PIN, 1);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
@@ -344,8 +314,6 @@ void audio_deckTask(void *arg) { // main task
 	fill_tx_buffer();
 
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
-	uint32_t t1 = 0;
-	uint32_t t2 = 0;
 
 #ifdef DEBUG_SPI
 	int i = 0;
@@ -359,71 +327,42 @@ void audio_deckTask(void *arg) { // main task
 
 	while (1) {
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
+		multiplier += 1;
 
-		if (debug) {
-			//memset(spi_tx_buffer, 0x04, SPI_N_BYTES);
-			memset(spi_rx_buffer, 0xFF, SPI_N_BYTES);
+		// fill the parameter buffer with the current parameters,
+		// will stay constant throughout the sending of this
+		// audio packet.
+		fill_tx_buffer();
 
-			t1 = xTaskGetTickCount();
-			uint8_t counter = 0;
-			uint8_t success = 0;
-//			while (digitalRead(SYNCH_PIN)) {
-//				if (counter == 0) {
-//					//success = spiWrite(spi_tx_buffer, SPI_N_BYTES);
-//					success = spiRead(spi_rx_buffer, SPI_N_BYTES);
-//					//success = spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
-//					//if (spi_rx_buffer[SPI_N_BYTES-1] == CHECKSUM_VALUE) {
-//				}
-//				counter ++;
-//			}
-			if (digitalRead(SYNCH_PIN)) {
-				spiReadWrite(spi_rx_buffer, spi_tx_buffer, SPI_N_BYTES);
-				spiRead(spi_rx_buffer, SPI_N_BYTES);
-				spiWrite(spi_tx_buffer, SPI_N_BYTES);
-				success = 1;
+		//if (multiplier == MULTIPLIER) {
+		if (digitalRead(SYNCH_PIN)) {
+
+			if (exchange_data_audio_deck()) {
+				new_data_to_send = true;
 			}
-			t2 = xTaskGetTickCount();
-			if (success) {
-				DEBUG_PRINT(
-						"pin state 1, SPI success %d, counter: %d, %d: data write [%4d,%4d,%4d,%4d,%4d], data read [%4d,%4d,%4d,%4d,%4d]\n",
-						success, counter, T2M(t2-t1),
-						spi_tx_buffer[0], spi_tx_buffer[1], spi_tx_buffer[2], spi_tx_buffer[3], spi_tx_buffer[SPI_N_BYTES-1],
-						spi_rx_buffer[0], spi_rx_buffer[1], spi_rx_buffer[2], spi_rx_buffer[3], spi_rx_buffer[SPI_N_BYTES-1]);
+			else {
+				//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
 			}
+			multiplier = 0;
+		}
 
-		} else {
-			// fill the parameter buffer with the current parameters,
-			// will stay constant throughout the sending of this
-			// audio packet.
-			fill_tx_buffer();
+		// send audio data over CRTP
+		if (state == SEND_FIRST_PACKET) {
+			if (send_audio_enable && new_data_to_send) {
+				// fill the crtp_tx_buffer with what we have received so far
+				memcpy(crtp_tx_buffer, spi_rx_buffer, SPI_N_BYTES);
+				new_data_to_send = false;
 
-			// always read the audio deck to increase the success rate.
-			//if (digitalRead(SYNCH_PIN)) {
-				if (exchange_data_audio_deck()) {
-					new_data_to_send = true;
-				}
-				else {
-					//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
-				}
-			//}
-
-			if (state == SEND_FIRST_PACKET) {
-				if (send_audio_enable && new_data_to_send) {
-					// fill the crtp_tx_buffer with what we have received so far
-					memcpy(crtp_tx_buffer, spi_rx_buffer, SPI_N_BYTES);
-					new_data_to_send = false;
-
-					send_audio_packet(1); // first packet is sent in channel 1 (start condition)
-					state = SEND_FOLLOWING_PACKET;
-				}
-			} else if (state == SEND_FOLLOWING_PACKET) {
-				if(send_audio_packet(0)){
-					state = SEND_FBIN_PACKET;
-				}
-			} else if (state == SEND_FBIN_PACKET) {
-				if(send_fbin_packet()){
-					state = SEND_FIRST_PACKET;
-				}
+				send_audio_packet(1); // first packet is sent in channel 1 (start condition)
+				state = SEND_FOLLOWING_PACKET;
+			}
+		} else if (state == SEND_FOLLOWING_PACKET) {
+			if(send_audio_packet(0)){
+				state = SEND_FBIN_PACKET;
+			}
+		} else if (state == SEND_FBIN_PACKET) {
+			if(send_fbin_packet()){
+				state = SEND_FIRST_PACKET;
 			}
 		}
 	}
@@ -438,7 +377,7 @@ static const DeckDriver audio_deck = {
 
 DECK_DRIVER(audio_deck);
 
-PARAM_GROUP_START(audio) PARAM_ADD(PARAM_UINT8, debug, &debug)
+PARAM_GROUP_START(audio)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
