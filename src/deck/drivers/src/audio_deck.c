@@ -16,6 +16,8 @@
 #include "usec_time.h"
 #include "power_distribution.h"
 
+#include "sleepus.h"
+
 #include "audio_deck.h"
 
 ////////////////////////////////////// DEFINES /////////////////////////////////
@@ -78,7 +80,7 @@
 #define CHECKSUM_VALUE 0xAB
 #define CHECKSUM_LENGTH 1
 
-#define MULTIPLIER 10 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
+#define MULTIPLIER 100 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
 #ifdef DEBUG_SPI
 #define SPI_N_BYTES 100
@@ -115,7 +117,7 @@ static uint8_t packet_count_fbins = 0;
 
 ////////////////////////////////////// SPI COMMUNICATION / ///////////////////////////////////
 
-static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
+static uint16_t spi_speed = SPI_BAUDRATE_3MHZ; //SPI_BAUDRATE_2MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
@@ -244,8 +246,9 @@ bool exchange_data_audio_deck() {
 	return 1;
 #else
 
-	//digitalWrite(SYNCH_PIN, 0);
 	spiBeginTransaction(spi_speed);
+	digitalWrite(SYNCH_PIN, LOW);
+	sleepus(50);
 
 #ifdef SYNCH_CHECK
 	//uint8_t tx_synch = 0xDF;
@@ -267,8 +270,9 @@ bool exchange_data_audio_deck() {
 
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
 
+	digitalWrite(SYNCH_PIN, HIGH);
 	spiEndTransaction();
-	//digitalWrite(SYNCH_PIN, 1);
+	sleepus(50);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
@@ -325,19 +329,25 @@ void audio_deckTask(void *arg) { // main task
 	spi_tx_buffer[SPI_N_BYTES-1] = CHECKSUM_VALUE;
 #endif
 
+	digitalWrite(SYNCH_PIN, HIGH);
+
 	while (1) {
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 		multiplier += 1;
+
+		digitalWrite(SYNCH_PIN, HIGH);
 
 		// fill the parameter buffer with the current parameters,
 		// will stay constant throughout the sending of this
 		// audio packet.
 		fill_tx_buffer();
 
-		//if (multiplier == MULTIPLIER) {
-		if (digitalRead(SYNCH_PIN)) {
-
-			if (exchange_data_audio_deck()) {
+		if (multiplier == MULTIPLIER) {
+		//if (digitalRead(SYNCH_PIN)) {
+			//DEBUG_PRINT("toggle \n");
+			//uint32_t val = digitalRead(SYNCH_PIN);
+			//digitalWrite(SYNCH_PIN, !val);
+			if (0) { //(exchange_data_audio_deck()) {
 				new_data_to_send = true;
 			}
 			else {
