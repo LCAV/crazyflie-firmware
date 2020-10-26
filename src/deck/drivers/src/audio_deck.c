@@ -38,6 +38,8 @@
 
 // audio deck parameters
 #define SYNCH_PIN DECK_GPIO_IO4
+#define FLOW_PIN DECK_GPIO_IO3
+
 #define FFTSIZE 32
 #define N_MICS 4
 #define AUDIO_DECK_ADDRESS 47// I2C adress of the deck
@@ -55,7 +57,7 @@
 // at 1000 we have packet loss
 // at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz.
 // at 300 we have an even higher rate of almost 7Hz
-#define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
 #define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
 
 // buffer sizes
@@ -77,13 +79,14 @@
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES) // 1092
 
 // because we have more bytes of audio data than parameter data, +1 for checksum
-#define CHECKSUM_VALUE 0xAB
+#define CHECKSUM_VALUE 0xAC
 #define CHECKSUM_LENGTH 1
 
-#define MULTIPLIER 100 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
+#define MULTIPLIER 1 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
+#define DEBUG_SPI
 #ifdef DEBUG_SPI
-#define SPI_N_BYTES 100
+#define SPI_N_BYTES 12
 #else
 #define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
 #endif
@@ -117,7 +120,7 @@ static uint8_t packet_count_fbins = 0;
 
 ////////////////////////////////////// SPI COMMUNICATION / ///////////////////////////////////
 
-static uint16_t spi_speed = SPI_BAUDRATE_3MHZ; //SPI_BAUDRATE_2MHZ;
+static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
@@ -246,9 +249,14 @@ bool exchange_data_audio_deck() {
 	return 1;
 #else
 
+	// FLOW_PIN is 0 while flow is still reading. Make sure to wait until
+	// bus is free.
+	// Probably not necessary but doesn't hurt.
+	while (!digitalRead(FLOW_PIN)) {};
+
 	spiBeginTransaction(spi_speed);
 	digitalWrite(SYNCH_PIN, LOW);
-	sleepus(50);
+	//sleepus(50);
 
 #ifdef SYNCH_CHECK
 	//uint8_t tx_synch = 0xDF;
@@ -269,10 +277,13 @@ bool exchange_data_audio_deck() {
 #endif
 
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
+	//sleepus(50);
+	//spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
+	////sleepus(50);
 
 	digitalWrite(SYNCH_PIN, HIGH);
 	spiEndTransaction();
-	sleepus(50);
+	//sleepus(50);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
@@ -291,9 +302,12 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 		return;
 	DEBUG_PRINT("AUDIO INIT\n");
 
+	initUsecTimer();
+
 	spiBegin();
 
-	pinMode(SYNCH_PIN, INPUT);
+	//pinMode(SYNCH_PIN, INPUT);
+	pinMode(SYNCH_PIN, OUTPUT);
 
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
 			AUDIO_TASK_PRI, NULL);
@@ -321,33 +335,40 @@ void audio_deckTask(void *arg) { // main task
 
 #ifdef DEBUG_SPI
 	int i = 0;
-	for (int j = SPI_N_BYTES; j > 0;  j--) {
+	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
+	for (int j = SPI_N_BYTES/2; j > 0;  j--) {
 		spi_tx_buffer[i] = (uint8_t) (j % 0xFF);
 		i++;
 	}
-	spi_tx_buffer[0] = 0xDF; // 223//(tx_counter++) % 0xFF; //xTaskGetTickCount() % 0xFF;
-	spi_tx_buffer[SPI_N_BYTES-1] = CHECKSUM_VALUE;
+	//memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
+	//spi_tx_buffer[0] = 0xFF;
+	spi_tx_buffer[SPI_N_BYTES/2] = CHECKSUM_VALUE;
 #endif
 
-	digitalWrite(SYNCH_PIN, HIGH);
+	//digitalWrite(SYNCH_PIN, HIGH);
 
 	while (1) {
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
+		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY)/2);
+
 		multiplier += 1;
 
-		digitalWrite(SYNCH_PIN, HIGH);
+		//digitalWrite(SYNCH_PIN, HIGH);
 
 		// fill the parameter buffer with the current parameters,
 		// will stay constant throughout the sending of this
 		// audio packet.
 		fill_tx_buffer();
 
+		// Normally we need to wait for the rising edge here but the OS does not allow
+		// us to do such long waits. So we accept some false packages instead.
 		if (multiplier == MULTIPLIER) {
 		//if (digitalRead(SYNCH_PIN)) {
 			//DEBUG_PRINT("toggle \n");
 			//uint32_t val = digitalRead(SYNCH_PIN);
 			//digitalWrite(SYNCH_PIN, !val);
-			if (0) { //(exchange_data_audio_deck()) {
+
+			if (exchange_data_audio_deck()) {
 				new_data_to_send = true;
 			}
 			else {
