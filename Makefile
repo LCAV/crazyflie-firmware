@@ -46,6 +46,7 @@ RTOS_DEBUG        ?= 0
 
 LIB = $(CRAZYFLIE_BASE)/src/lib
 FREERTOS = $(CRAZYFLIE_BASE)/vendor/FreeRTOS
+CFLAGS += -DBLOBS_LOC='"$(CRAZYFLIE_BASE)/blobs/"'
 
 # Communication Link
 UART2_LINK        ?= 0
@@ -109,7 +110,7 @@ FREERTOS_OBJ = list.o tasks.o queue.o timers.o $(MEMMANG_OBJ)
 
 #FatFS
 VPATH += $(LIB)/FatFS
-PROJ_OBJ += diskio.o ff.o syscall.o unicode.o fatfs_sd.o
+PROJ_OBJ += diskio.o ff.o syscall.o ffunicode.o fatfs_sd.o
 ifeq ($(FATFS_DISKIO_TESTS), 1)
 PROJ_OBJ += diskio_function_tests.o
 CFLAGS += -DUSD_RUN_DISKIO_FUNCTION_TESTS
@@ -177,6 +178,7 @@ PROJ_OBJ += estimator.o estimator_complementary.o
 PROJ_OBJ += controller.o controller_pid.o controller_mellinger.o controller_indi.o
 PROJ_OBJ += power_distribution_$(POWER_DISTRIBUTION).o
 PROJ_OBJ += estimator_kalman.o kalman_core.o kalman_supervisor.o
+PROJ_OBJ += collision_avoidance.o
 
 # High-Level Commander
 PROJ_OBJ += crtp_commander_high_level.o planner.o pptraj.o pptraj_compressed.o
@@ -255,7 +257,7 @@ PROJ_OBJ += exptestBolt.o
 PROJ_OBJ += filter.o cpuid.o cfassert.o  eprintf.o crc.o num.o debug.o
 PROJ_OBJ += version.o FreeRTOS-openocd.o
 PROJ_OBJ += configblockeeprom.o crc_bosch.o
-PROJ_OBJ += sleepus.o statsCnt.o
+PROJ_OBJ += sleepus.o statsCnt.o rateSupervisor.o
 PROJ_OBJ += lighthouse_core.o pulse_processor.o pulse_processor_v1.o pulse_processor_v2.o lighthouse_geometry.o ootx_decoder.o lighthouse_calibration.o lighthouse_deck_flasher.o lighthouse_position_est.o
 
 ifeq ($(DEBUG_PRINT_ON_SEGGER_RTT), 1)
