@@ -87,9 +87,8 @@ static SemaphoreHandle_t txComplete;
 static SemaphoreHandle_t rxComplete;
 static SemaphoreHandle_t spiMutex;
 
-static void spiDMAInit();
 static void spiConfigureWithSpeed(uint16_t baudRatePrescaler);
-
+static void spiDMAInit();
 
 void spiBegin(void)
 {
@@ -124,18 +123,21 @@ void spiBegin(void)
 #ifdef DECK_SPI_MODE3
   GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
 #else
-  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
+  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
 #endif
 
   /*!< SPI SCK pin configuration */
+  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
   GPIO_InitStructure.GPIO_Pin = SPI_SCK_PIN;
   GPIO_Init(SPI_SCK_GPIO_PORT, &GPIO_InitStructure);
 
   /*!< SPI MOSI pin configuration */
+  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
   GPIO_InitStructure.GPIO_Pin =  SPI_MOSI_PIN;
   GPIO_Init(SPI_MOSI_GPIO_PORT, &GPIO_InitStructure);
 
   /*!< SPI MISO pin configuration */
+  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
   GPIO_InitStructure.GPIO_Pin =  SPI_MISO_PIN;
   GPIO_Init(SPI_MISO_GPIO_PORT, &GPIO_InitStructure);
 
@@ -148,7 +150,7 @@ void spiBegin(void)
   isInit = true;
 }
 
-static void spiDMAInit()
+void spiDMAInit()
 {
   DMA_InitTypeDef  DMA_InitStructure;
   NVIC_InitTypeDef NVIC_InitStructure;

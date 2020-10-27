@@ -253,10 +253,11 @@ bool exchange_data_audio_deck() {
 	// bus is free.
 	// Probably not necessary but doesn't hurt.
 	while (!digitalRead(FLOW_PIN)) {};
+	sleepus(200);
 
 	spiBeginTransaction(spi_speed);
 	digitalWrite(SYNCH_PIN, LOW);
-	//sleepus(50);
+	sleepus(50);
 
 #ifdef SYNCH_CHECK
 	//uint8_t tx_synch = 0xDF;
@@ -277,13 +278,11 @@ bool exchange_data_audio_deck() {
 #endif
 
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
-	//sleepus(50);
-	//spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
-	////sleepus(50);
+	sleepus(50);
 
 	digitalWrite(SYNCH_PIN, HIGH);
 	spiEndTransaction();
-	//sleepus(50);
+	sleepus(200);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {

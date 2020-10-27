@@ -89,7 +89,7 @@ static void flowdeckTask(void *param)
 
   uint64_t lastTime  = usecTimestamp();
   while(1) {
-    vTaskDelay(1000);
+    vTaskDelay(10);
 
     pmw3901ReadMotion(NCS_PIN, &currentMotion);
 
