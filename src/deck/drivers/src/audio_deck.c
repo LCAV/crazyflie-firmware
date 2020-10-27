@@ -24,12 +24,10 @@
 
 // debugging
 //#define USE_TEST_SIGNALS
-//#define DEBUG_SPI // set this define to use smaller, fixed buffers.
+#define DEBUG_SPI // set this define to use smaller, fixed buffers.
 #ifdef USE_TEST_SIGNALS
 #include "audio_debug_data.h"
 #endif
-
-//#define SYNCH_CHECK
 
 // constants
 #define INT16_PRECISION 2 // int16 = 2 bytes
@@ -84,7 +82,6 @@
 
 #define MULTIPLIER 1 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
-#define DEBUG_SPI
 #ifdef DEBUG_SPI
 #define SPI_N_BYTES 12
 #else
@@ -259,24 +256,6 @@ bool exchange_data_audio_deck() {
 	digitalWrite(SYNCH_PIN, LOW);
 	sleepus(50);
 
-#ifdef SYNCH_CHECK
-	//uint8_t tx_synch = 0xDF;
-	//uint8_t rx_synch = 0;
-	//spiExchange(1, &tx_synch, &rx_synch);
-
-	uint8_t rx_synch = 0;
-	uint8_t tx_synch = 0;
-	uint32_t waiting = 0;
-	uint32_t timeout = 100000;
-	while (rx_synch != 0xDF) {
-		spiExchange(1, &tx_synch, &rx_synch);
-		waiting += 1;
-		if (waiting > timeout)
-			break;
-	}
-	waiting = 0;
-#endif
-
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
 	sleepus(50);
 
@@ -328,23 +307,18 @@ void audio_deckTask(void *arg) { // main task
 	DEBUG_PRINT("AUDIO TASK_STARTED \n");
 
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
-	fill_tx_buffer();
-
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
 
-#ifdef DEBUG_SPI
+#ifndef DEBUG_SPI
+	fill_tx_buffer();
+#else
 	int i = 0;
-	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
-	for (int j = SPI_N_BYTES/2; j > 0;  j--) {
-		spi_tx_buffer[i] = (uint8_t) (j % 0xFF);
+	for (int j = SPI_N_BYTES; j > 0;  j--) {
+		spi_tx_buffer[i] = (uint8_t) (j % 0xFF); // start at SPI_N_BYTES % 255
 		i++;
 	}
-	//memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
-	//spi_tx_buffer[0] = 0xFF;
-	spi_tx_buffer[SPI_N_BYTES/2] = CHECKSUM_VALUE;
+	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 #endif
-
-	//digitalWrite(SYNCH_PIN, HIGH);
 
 	while (1) {
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
@@ -352,25 +326,19 @@ void audio_deckTask(void *arg) { // main task
 
 		multiplier += 1;
 
-		//digitalWrite(SYNCH_PIN, HIGH);
-
 		// fill the parameter buffer with the current parameters,
 		// will stay constant throughout the sending of this
 		// audio packet.
 		fill_tx_buffer();
 
-		// Normally we need to wait for the rising edge here but the OS does not allow
-		// us to do such long waits. So we accept some false packages instead.
 		if (multiplier == MULTIPLIER) {
-		//if (digitalRead(SYNCH_PIN)) {
-			//DEBUG_PRINT("toggle \n");
-			//uint32_t val = digitalRead(SYNCH_PIN);
-			//digitalWrite(SYNCH_PIN, !val);
-
 			if (exchange_data_audio_deck()) {
+				//DEBUG_PRINT("Audio OK \n");
+				spi_tx_buffer[0] = 0x01;
 				new_data_to_send = true;
 			}
 			else {
+				spi_tx_buffer[0] = 0x00;
 				//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
 			}
 			multiplier = 0;

@@ -213,6 +213,9 @@ bool pmw3901Init(const deckPin_t csPin)
 
     isInit = true;
   }
+  else {
+	  DEBUG_PRINT("Unknown ID?\n");
+  }
 
   return isInit;
 }
