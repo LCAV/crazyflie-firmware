@@ -55,7 +55,7 @@
 // at 1000 we have packet loss
 // at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz.
 // at 300 we have an even higher rate of almost 7Hz
-#define AUDIO_TASK_FREQUENCY 100 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
 #define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
 
 // buffer sizes
@@ -250,7 +250,7 @@ bool exchange_data_audio_deck() {
 	// bus is free.
 	// Probably not necessary but doesn't hurt.
 	while (!digitalRead(FLOW_PIN)) {};
-	sleepus(50);
+	//sleepus(50);
 
 	spiBeginTransaction(spi_speed);
 	digitalWrite(SYNCH_PIN, LOW);
@@ -261,7 +261,7 @@ bool exchange_data_audio_deck() {
 
 	digitalWrite(SYNCH_PIN, HIGH);
 	spiEndTransaction();
-	sleepus(50);
+	//sleepus(50);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
