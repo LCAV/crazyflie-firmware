@@ -83,7 +83,7 @@
 #define MULTIPLIER 1 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
 #ifdef DEBUG_SPI
-#define SPI_N_BYTES 12
+#define SPI_N_BYTES 300
 #else
 #define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
 #endif
@@ -250,18 +250,18 @@ bool exchange_data_audio_deck() {
 	// bus is free.
 	// Probably not necessary but doesn't hurt.
 	while (!digitalRead(FLOW_PIN)) {};
-	sleepus(200);
+	sleepus(50);
 
 	spiBeginTransaction(spi_speed);
 	digitalWrite(SYNCH_PIN, LOW);
-	sleepus(50);
+	//sleepus(50);
 
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
-	sleepus(50);
+	//sleepus(50);
 
 	digitalWrite(SYNCH_PIN, HIGH);
 	spiEndTransaction();
-	sleepus(200);
+	sleepus(50);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
@@ -322,7 +322,7 @@ void audio_deckTask(void *arg) { // main task
 
 	while (1) {
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY)/2);
+		//vTaskDelay(F2T(AUDIO_TASK_FREQUENCY)/2);
 
 		multiplier += 1;
 
@@ -332,13 +332,22 @@ void audio_deckTask(void *arg) { // main task
 		fill_tx_buffer();
 
 		if (multiplier == MULTIPLIER) {
+#ifdef DEBUG_SPI
+			spi_tx_buffer[1] = (spi_tx_buffer[1] + 1) % 0xFF;
+#endif
 			if (exchange_data_audio_deck()) {
 				//DEBUG_PRINT("Audio OK \n");
+#ifdef DEBUG_SPI
 				spi_tx_buffer[0] = 0x01;
+#endif
+
 				new_data_to_send = true;
 			}
 			else {
+#ifdef DEBUG_SPI
 				spi_tx_buffer[0] = 0x00;
+#endif
+
 				//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
 			}
 			multiplier = 0;
