@@ -83,7 +83,7 @@
 #define MULTIPLIER 1 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
 #ifdef DEBUG_SPI
-#define SPI_N_BYTES 300
+#define SPI_N_BYTES 1100
 #else
 #define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
 #endif
