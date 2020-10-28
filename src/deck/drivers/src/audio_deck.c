@@ -24,7 +24,7 @@
 
 // debugging
 //#define USE_TEST_SIGNALS
-#define DEBUG_SPI // set this define to use smaller, fixed buffers.
+//#define DEBUG_SPI // set this define to use smaller, fixed buffers.
 #ifdef USE_TEST_SIGNALS
 #include "audio_debug_data.h"
 #endif
