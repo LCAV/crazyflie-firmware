@@ -11,11 +11,11 @@
 #include "config.h"
 #include "debug.h"
 #include "deck.h"
+#include "log.h"
 #include "param.h"
 #include "crtp.h"
 #include "usec_time.h"
 #include "power_distribution.h"
-
 #include "sleepus.h"
 
 #include "audio_deck.h"
@@ -33,14 +33,10 @@
 #define INT16_PRECISION 2 // int16 = 2 bytes
 #define FLOAT_PRECISION 4// float32 = 4 bytes
 #define CRTP_MAX_PAYLOAD 29 // data bytes per crtp packet
-
-// audio deck parameters
 #define SYNCH_PIN DECK_GPIO_IO4
 #define FLOW_PIN DECK_GPIO_IO3
-
 #define FFTSIZE 32
 #define N_MICS 4
-#define AUDIO_DECK_ADDRESS 47// I2C adress of the deck
 #define N_MOTORS 4
 
 
@@ -56,10 +52,10 @@
 // at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz.
 // at 300 we have an even higher rate of almost 7Hz
 #define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
-#define SIZE_OF_PARAM_I2C 5 // in uint16, min_freq = 1, max_freq = 1, delta_freq = 1, n_average = 1, snr + propeller enable = 1
+#define SIZE_OF_PARAM_I2C 6 // in uint16, min_freq, max_freq, delta_freq, n_average, snr, propeller enable
 
 // buffer sizes
-#define PARAM_N_INTS (N_MOTORS + SIZE_OF_PARAM_I2C) // in uint16, n_motors for the current trhust commands
+#define PARAM_N_INTS (N_MOTORS + SIZE_OF_PARAM_I2C) // in uint16, n_motors for the current thrust commands
 #define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION) // 14 bytes
 
 #define AUDIO_N_FLOATS (N_MICS * FFTSIZE * 2) // *2 for complex numbers
@@ -76,16 +72,13 @@
 
 #define TOTAL_N_BYTES (FBINS_N_BYTES + AUDIO_N_BYTES) // 1092
 
-// because we have more bytes of audio data than parameter data, +1 for checksum
+// TODO(FD) this is not a real checksum, but just a fixed value. Should change name.
 #define CHECKSUM_VALUE 0xAC
-#define CHECKSUM_LENGTH 1
-
-#define MULTIPLIER 1 // how often we want to attempt SPI communication (AUDIO_TASK_FREQUENCY / MULTIPLIER)
 
 #ifdef DEBUG_SPI
 #define SPI_N_BYTES 1100
 #else
-#define SPI_N_BYTES (TOTAL_N_BYTES + CHECKSUM_LENGTH)
+#define SPI_N_BYTES (TOTAL_N_BYTES + 1) // + 1 for checksum, which is added in the end of buffer
 #endif
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
@@ -111,7 +104,6 @@ static enum {
 
 static uint8_t crtp_tx_buffer[SPI_N_BYTES]; // buffer with data to be sent through CRTP
 static uint16_t param_buffer_uint16[PARAM_N_INTS]; // buffer with the current parameters
-
 static uint8_t packet_count_audio = 0;
 static uint8_t packet_count_fbins = 0;
 
@@ -121,34 +113,8 @@ static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
-static int multiplier = 0;
-
-////////////////////////////////////////// DEBUGGING  ///////////////////////////////////////
-uint8_t tx_counter = 0;
 
 /////////////////////////////// AUDIO DECK FUNCTIONS  ///////////////////////////////////////
-
-/**
- *  Fill frequency data after the audio data in the CRTP packet.
- */
-void fill_packet_data_fbins(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size) {
-	for (uint8_t i = 0; i < packet_size; i++) {
-#ifndef DEBUG_SPI
-		packet_data[i] = crtp_tx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD + i];
-#endif
-	}
-	//memcpy(packet_data, &crtp_tx_buffer[AUDIO_N_BYTES + packet_count * CRTP_MAX_PAYLOAD], packet_size);
-}
-
-/**
- *  Fill a new CRTP packet with the corresponding data from crtp_tx_buffer.
- */
-void fill_packet_data_audio(uint8_t packet_data[], uint8_t packet_count, uint8_t packet_size) {
-	for (uint8_t i = 0; i < packet_size; i++) {
-		packet_data[i] = crtp_tx_buffer[packet_count * CRTP_MAX_PAYLOAD + i];
-	}
-	//memcpy(packet_data, &crtp_tx_buffer[packet_count * CRTP_MAX_PAYLOAD], packet_size);
-}
 
 uint8_t send_audio_packet(uint8_t channel) {
 	static CRTPPacket signal_array_p;
@@ -156,8 +122,8 @@ uint8_t send_audio_packet(uint8_t channel) {
 	signal_array_p.size = CRTP_MAX_PAYLOAD;
 
 	if (packet_count_audio == AUDIO_N_PACKETS_FULL) { // send last packet and reset counter
-		fill_packet_data_audio(signal_array_p.data, packet_count_audio,
-				AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
+		memcpy(signal_array_p.data, &crtp_tx_buffer[packet_count_audio * CRTP_MAX_PAYLOAD], AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
+
 		if (crtpSendPacket(&signal_array_p) == errQUEUE_FULL) {
 			DEBUG_PRINT("errQUEUE_FULL audio packet %d\n", packet_count_audio);
 			return 0;
@@ -167,8 +133,8 @@ uint8_t send_audio_packet(uint8_t channel) {
 			return 1;
 		}
 	} else { // send full packet
-		fill_packet_data_audio(signal_array_p.data, packet_count_audio,
-				CRTP_MAX_PAYLOAD);
+		memcpy(signal_array_p.data, &crtp_tx_buffer[packet_count_audio * CRTP_MAX_PAYLOAD], CRTP_MAX_PAYLOAD);
+
 		if (crtpSendPacket(&signal_array_p) == errQUEUE_FULL) {
 			DEBUG_PRINT("errQUEUE_FULL audio packet %d\n", packet_count_audio);
 			return 0;
@@ -186,8 +152,8 @@ uint8_t send_fbin_packet() {
 	fbin_array_p.size = CRTP_MAX_PAYLOAD;
 
 	if (packet_count_fbins == FBINS_N_PACKETS_FULL) { // send last packet and reset counter
-		fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins,
-				FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
+		memcpy(fbin_array_p.data, &crtp_tx_buffer[AUDIO_N_BYTES + packet_count_fbins * CRTP_MAX_PAYLOAD], FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
+
 		if (crtpSendPacket(&fbin_array_p) == errQUEUE_FULL) {
 			DEBUG_PRINT("errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
 			return 0;
@@ -197,8 +163,8 @@ uint8_t send_fbin_packet() {
 			return 1;
 		}
 	} else { // send full packet
-		fill_packet_data_fbins(fbin_array_p.data, packet_count_fbins,
-				CRTP_MAX_PAYLOAD);
+		memcpy(fbin_array_p.data, &crtp_tx_buffer[AUDIO_N_BYTES + packet_count_fbins * CRTP_MAX_PAYLOAD], CRTP_MAX_PAYLOAD);
+
 		if (crtpSendPacket(&fbin_array_p) == errQUEUE_FULL) {
 			DEBUG_PRINT("errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
 			return 0;
@@ -211,7 +177,7 @@ uint8_t send_fbin_packet() {
 }
 
 
-void fill_tx_buffer() {
+void fill_param_buffer() {
 	if (filter_propellers_enable) {
 		uint16_t *motorPower_p = get_motor_power();
 		memcpy(param_buffer_uint16, motorPower_p, N_MOTORS*2);
@@ -223,14 +189,9 @@ void fill_tx_buffer() {
 	param_buffer_uint16[N_MOTORS + 1] = max_freq;
 	param_buffer_uint16[N_MOTORS + 2] = delta_freq;
 	param_buffer_uint16[N_MOTORS + 3] = n_average;
+	param_buffer_uint16[N_MOTORS + 4] = filter_propellers_enable;
+	param_buffer_uint16[N_MOTORS + 5] = filter_snr_enable;
 
-	uint16_t enables = (filter_propellers_enable << 8) | filter_snr_enable;
-	param_buffer_uint16[N_MOTORS + 4] = enables;
-
-#ifndef DEBUG_SPI
-	memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
-	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
-#endif
 }
 
 /** Exchange current audio data from the audio deck (signals and frequency bins)
@@ -245,9 +206,7 @@ bool exchange_data_audio_deck() {
 	memcpy(spi_rx_buffer[AUDIO_N_BYTES], frequencies, FBINS_N_BYTES);
 	return 1;
 #else
-
-	// FLOW_PIN is 0 while flow is still reading. Make sure to wait until
-	// bus is free.
+	// FLOW_PIN is 0 while flowdeck is still being read. Make sure to wait until bus is free.
 	// Probably not necessary but doesn't hurt.
 	while (!digitalRead(FLOW_PIN)) {};
 	//sleepus(50);
@@ -268,6 +227,7 @@ bool exchange_data_audio_deck() {
 		memcpy(spi_rx_buffer, temp_spi_rx_buffer, SPI_N_BYTES);
 		return true;
 	}
+	//DEBUG_PRINT("%d %d %d ... %d %d \n", temp_spi_rx_buffer[0], temp_spi_rx_buffer[1], temp_spi_rx_buffer[2], temp_spi_rx_buffer[SPI_N_BYTES - 2], temp_spi_rx_buffer[SPI_N_BYTES - 1]);
 	return false;
 #endif
 }
@@ -309,53 +269,48 @@ void audio_deckTask(void *arg) { // main task
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
 
+	fill_param_buffer();
+
+
 #ifndef DEBUG_SPI
-	fill_tx_buffer();
+	memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
 #else
 	int i = 0;
 	for (int j = SPI_N_BYTES; j > 0;  j--) {
 		spi_tx_buffer[i] = (uint8_t) (j % 0xFF); // start at SPI_N_BYTES % 255
 		i++;
 	}
-	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 #endif
+	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 
 	while (1) {
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-		//vTaskDelay(F2T(AUDIO_TASK_FREQUENCY)/2);
-
-		multiplier += 1;
 
 		// fill the parameter buffer with the current parameters,
 		// will stay constant throughout the sending of this
 		// audio packet.
-		fill_tx_buffer();
+		fill_param_buffer();
 
-		if (multiplier == MULTIPLIER) {
 #ifdef DEBUG_SPI
-			spi_tx_buffer[1] = (spi_tx_buffer[1] + 1) % 0xFF;
-#endif
-			if (exchange_data_audio_deck()) {
-				//DEBUG_PRINT("Audio OK \n");
-#ifdef DEBUG_SPI
-				spi_tx_buffer[0] = 0x01;
-#endif
-
-				new_data_to_send = true;
-			}
-			else {
-#ifdef DEBUG_SPI
-				spi_tx_buffer[0] = 0x00;
-#endif
-
-				//DEBUG_PRINT("CHECKSUM fail, did not update spi_rx_buffer\n");
-			}
-			multiplier = 0;
+		spi_tx_buffer[1] = (spi_tx_buffer[1] + 1) % 0xFF;
+		if (exchange_data_audio_deck()) {
+			spi_tx_buffer[0] = 0x01;
+			new_data_to_send = true;
 		}
+		else {
+			spi_tx_buffer[0] = 0x00;
+		}
+#else
+		memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
+		new_data_to_send = exchange_data_audio_deck();
+#endif
 
 		// send audio data over CRTP
 		if (state == SEND_FIRST_PACKET) {
 			if (send_audio_enable && new_data_to_send) {
+
+				//DEBUG_PRINT("Start sending one chunk of audio data... \n");
+
 				// fill the crtp_tx_buffer with what we have received so far
 				memcpy(crtp_tx_buffer, spi_rx_buffer, SPI_N_BYTES);
 				new_data_to_send = false;
@@ -369,6 +324,7 @@ void audio_deckTask(void *arg) { // main task
 			}
 		} else if (state == SEND_FBIN_PACKET) {
 			if(send_fbin_packet()){
+				//DEBUG_PRINT("... done sending one chunk of audio data. \n");
 				state = SEND_FIRST_PACKET;
 			}
 		}
@@ -383,6 +339,12 @@ static const DeckDriver audio_deck = {
 		.init = audio_deckInit, .test = audio_deckTest, };
 
 DECK_DRIVER(audio_deck);
+
+LOG_GROUP_START(audio)
+LOG_ADD(LOG_UINT8, send_audio_enable, &send_audio_enable)
+LOG_ADD(LOG_UINT8, new_data_to_send, &new_data_to_send)
+LOG_ADD(LOG_UINT8, first_element, &spi_rx_buffer[0])
+LOG_GROUP_STOP(audio)
 
 PARAM_GROUP_START(audio)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
