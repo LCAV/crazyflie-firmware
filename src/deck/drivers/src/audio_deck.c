@@ -16,7 +16,6 @@
 #include "crtp.h"
 #include "usec_time.h"
 #include "power_distribution.h"
-#include "sleepus.h"
 
 #include "audio_deck.h"
 
@@ -52,10 +51,10 @@
 // at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz.
 // at 300 we have an even higher rate of almost 7Hz
 #define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
-#define SIZE_OF_PARAM_I2C 6 // in uint16, min_freq, max_freq, delta_freq, n_average, snr, propeller enable
 
 // buffer sizes
-#define PARAM_N_INTS (N_MOTORS + SIZE_OF_PARAM_I2C) // in uint16, n_motors for the current thrust commands
+// parameters include: current thrusts and min_freq, max_freq, delta_freq, n_average, snr, propeller: total 6 
+#define PARAM_N_INTS (N_MOTORS + 6) 
 #define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION) // 14 bytes
 
 #define AUDIO_N_FLOATS (N_MICS * FFTSIZE * 2) // *2 for complex numbers
@@ -209,18 +208,14 @@ bool exchange_data_audio_deck() {
 	// FLOW_PIN is 0 while flowdeck is still being read. Make sure to wait until bus is free.
 	// Probably not necessary but doesn't hurt.
 	while (!digitalRead(FLOW_PIN)) {};
-	//sleepus(50);
 
 	spiBeginTransaction(spi_speed);
 	digitalWrite(SYNCH_PIN, LOW);
-	//sleepus(50);
 
 	spiExchange(SPI_N_BYTES, spi_tx_buffer, temp_spi_rx_buffer);
-	//sleepus(50);
 
 	digitalWrite(SYNCH_PIN, HIGH);
 	spiEndTransaction();
-	//sleepus(50);
 
 	// Only overwrite previous spi_rx_buffer if the checksum value is verified.
 	if (temp_spi_rx_buffer[SPI_N_BYTES - 1] == CHECKSUM_VALUE) {
@@ -240,11 +235,8 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 		return;
 	DEBUG_PRINT("AUDIO INIT\n");
 
-	initUsecTimer();
-
 	spiBegin();
 
-	//pinMode(SYNCH_PIN, INPUT);
 	pinMode(SYNCH_PIN, OUTPUT);
 
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,

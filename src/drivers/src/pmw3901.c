@@ -225,7 +225,6 @@ void pmw3901ReadMotion(const deckPin_t csPin, motionBurst_t * motion)
   digitalWrite(csPin,LOW);
   sleepus(50);
   spiExchange(1, &address, &address);
-
   sleepus(50);
   spiExchange(sizeof(motionBurst_t), (uint8_t*)motion, (uint8_t*)motion);
   sleepus(50);
@@ -233,18 +232,6 @@ void pmw3901ReadMotion(const deckPin_t csPin, motionBurst_t * motion)
   spiEndTransaction();
   sleepus(50);
 
-  // debugging:
-  // size of motionBurst is: 12
-  // motion, observation, deltaX (2 bytes), deltaY (2 bytes), ... ,
-  /*
-  DEBUG_PRINT("SPI address: %d\n", address);
-  DEBUG_PRINT("SPI    data: ");
-  for (int i = 0; i < sizeof(motionBurst_t); i++) {
-	 consolePrintf("%d ", *((uint8_t*)(motion + i)));
-  }
-  consolePrintf("size: %d\n", sizeof(motionBurst_t));
-  DEBUG_PRINT("deltaX: %d, deltaY: %d\n", motion->deltaX, motion->deltaY);
-  */
   uint16_t realShutter = (motion->shutter >> 8) & 0x0FF;
   realShutter |= (motion->shutter & 0x0ff) << 8;
   motion->shutter = realShutter;

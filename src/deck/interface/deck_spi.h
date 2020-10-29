@@ -44,7 +44,6 @@ void spiBegin(void);
 void spiBeginTransaction(uint16_t baudRatePrescaler);
 void spiEndTransaction();
 
-
 /* Send the data_tx buffer and receive into the data_rx buffer */
 bool spiExchange(size_t length, const uint8_t *data_tx, uint8_t *data_rx);
 
