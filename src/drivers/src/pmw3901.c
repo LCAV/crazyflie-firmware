@@ -195,10 +195,7 @@ bool pmw3901Init(const deckPin_t csPin)
 
   DEBUG_PRINT("Motion chip id: 0x%x:0x%x\n", chipId, invChipId);
 
-  // TODO(FD) remove this check because for some reason it suddenly
-  // started to fail. To be investigated why it was here.
-  // if (chipId == 0x49 && invChipId == 0xB6)
-  if (chipId == 0x49)
+  if (chipId == 0x49 && invChipId == 0xB6)
   {
     // Power on reset
     registerWrite(csPin, 0x3a, 0x5a);

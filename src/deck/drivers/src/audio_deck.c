@@ -94,7 +94,7 @@ static uint16_t min_freq = 100;
 static uint16_t max_freq = 10000;
 static uint16_t delta_freq = 100;
 static uint16_t n_average = 1;
-static bool filter_propellers_enable = false;
+static bool filter_prop_enable = false;
 static bool filter_snr_enable = false;
 
 ////////////////////////////////////// CRTP COMMUNICATION /////////////////////////////////
@@ -178,7 +178,7 @@ uint8_t send_fbin_packet() {
 
 
 void fill_param_buffer() {
-	if (filter_propellers_enable) {
+	if (filter_prop_enable) {
 		uint16_t *motorPower_p = get_motor_power();
 		memcpy(param_buffer_uint16, motorPower_p, N_MOTORS*2);
 	} else {
@@ -189,7 +189,7 @@ void fill_param_buffer() {
 	param_buffer_uint16[N_MOTORS + 1] = max_freq;
 	param_buffer_uint16[N_MOTORS + 2] = delta_freq;
 	param_buffer_uint16[N_MOTORS + 3] = n_average;
-	param_buffer_uint16[N_MOTORS + 4] = filter_propellers_enable;
+	param_buffer_uint16[N_MOTORS + 4] = filter_prop_enable;
 	param_buffer_uint16[N_MOTORS + 5] = filter_snr_enable;
 
 }
@@ -352,6 +352,6 @@ PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
 PARAM_ADD(PARAM_UINT16, delta_freq, &delta_freq)
 PARAM_ADD(PARAM_UINT16, n_average, &n_average)
-PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_propellers_enable)
+PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_prop_enable)
 PARAM_ADD(PARAM_UINT8, filter_snr_enable, &filter_snr_enable)
 PARAM_GROUP_STOP(audio)
