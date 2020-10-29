@@ -41,15 +41,20 @@
 
 // The maximum update rate we can expect at the ROS level is
 // AUDIO_TASK_FREQUENCY / TOTAL_N_PACKETS (currently 36+3=39), so:
-// 1000: 25 Hz
-// 500: 12 Hz
-// 300: 7 Hz
-// 100: 2.5 Hz
+// 1000: 25 Hz, CRTP packet loss
+// 500: 12.8 Hz. sometimes CRTP packet loss
+// 300: 7.7 Hz, no packet loss
+// 100: 2.5 Hz, no packet loss
 //
-// Observations:
-// at 1000 we have packet loss
-// at 500 we sometimes have packet loss, with an update rate of ca. 3 Hz.
-// at 300 we have an even higher rate of almost 7Hz
+// Note that sending 1089 bytes at the baudrate 6MHz takes
+// ca. 1.67 ms (this includes delays introduced by response time etc,
+// and was found with oscilloscope).
+// That means we have an effective maximum task frequency of
+// at most 1/1.67ms = 600Hz, which would lead to an update rate in ROS of 15Hz.
+// However, we do not need that high of a rate because we only have
+// new audio data ca. every 50ms, corresponding to 20Hz. Also, setting
+// the rate to this maximum would mean there is no time left to do
+// anything else, so it is not desirable.
 #define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
 
 // buffer sizes
@@ -108,7 +113,7 @@ static uint8_t packet_count_fbins = 0;
 
 ////////////////////////////////////// SPI COMMUNICATION / ///////////////////////////////////
 
-static uint16_t spi_speed = SPI_BAUDRATE_2MHZ;
+static uint16_t spi_speed = SPI_BAUDRATE_6MHZ;
 static uint8_t spi_tx_buffer[SPI_N_BYTES];
 static uint8_t spi_rx_buffer[SPI_N_BYTES];
 static uint8_t temp_spi_rx_buffer[SPI_N_BYTES];
@@ -276,7 +281,11 @@ void audio_deckTask(void *arg) { // main task
 	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 
 	while (1) {
+		// Note that we only delay if necessary, and there is no
+		// warning if we have actually taken longer than allowed
+		// for one period.
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
+
 
 		// fill the parameter buffer with the current parameters,
 		// will stay constant throughout the sending of this
@@ -310,6 +319,9 @@ void audio_deckTask(void *arg) { // main task
 				send_audio_packet(1); // first packet is sent in channel 1 (start condition)
 				state = SEND_FOLLOWING_PACKET;
 			}
+			else if (send_audio_enable) {
+				DEBUG_PRINT("Want to send new data but don't have any!\n");
+			}
 		} else if (state == SEND_FOLLOWING_PACKET) {
 			if(send_audio_packet(0)){
 				state = SEND_FBIN_PACKET;
@@ -332,11 +344,13 @@ static const DeckDriver audio_deck = {
 
 DECK_DRIVER(audio_deck);
 
+
 LOG_GROUP_START(audio)
 LOG_ADD(LOG_UINT8, send_audio_enable, &send_audio_enable)
 LOG_ADD(LOG_UINT8, new_data_to_send, &new_data_to_send)
 LOG_ADD(LOG_UINT8, first_element, &spi_rx_buffer[0])
 LOG_GROUP_STOP(audio)
+
 
 PARAM_GROUP_START(audio)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
