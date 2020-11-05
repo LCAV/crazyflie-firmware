@@ -46,7 +46,7 @@
 // 300: 7.7 Hz, no packet loss
 // 100: 2.5 Hz, no packet loss
 //
-// Note that sending 1089 bytes at the baudrate 6MHz takes
+// Note that sending 1089 bytes at the baudrate 6MHz over SPI takes
 // ca. 1.67 ms (this includes delays introduced by response time etc,
 // and was found with oscilloscope).
 // That means we have an effective maximum task frequency of
@@ -337,8 +337,8 @@ void audio_deckTask(void *arg) { // main task
 }
 
 static const DeckDriver audio_deck = {
-		// .vid = 0xFF, // write here id for detection of the board
-		// .pid = 0xFF,
+		 .vid = 0xBC, // write here id for detection of the board
+		 .pid = 0xFF,
 		.name = "audio_deck", .usedGpio = DECK_USING_SDA | DECK_USING_SCL,
 		.init = audio_deckInit, .test = audio_deckTest, };
 
