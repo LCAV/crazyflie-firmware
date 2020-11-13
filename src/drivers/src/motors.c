@@ -49,10 +49,6 @@ static uint16_t motorsConv16ToBits(uint16_t bits);
 
 uint32_t motor_ratios[] = {0, 0, 0, 0};
 
-void motorsPlayTone(uint16_t frequency, uint16_t duration_msec);
-void motorsPlayMelody(uint16_t *notes);
-void motorsBeep(int id, bool enable, uint16_t frequency, uint16_t ratio);
-
 #include "motors_def_cf2.c"
 
 const MotorPerifDef** motorMap;  /* Current map configuration */
