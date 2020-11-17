@@ -254,8 +254,6 @@ void motorsTestTask(void* params);
  *     motorsBeep(false, 0, 0); *
  * */
 void motorsBeep(int id, bool enable, uint16_t frequency, uint16_t ratio);
-void motorsPlayTone(uint16_t frequency, uint16_t duration_msec);
-void motorsPlayMelody(uint16_t *notes);
 
 #endif /* __MOTORS_H__ */
 

@@ -18,12 +18,6 @@
 #include "power_distribution.h"
 #include "motors.h"
 
-
-
-// choose any sound from motors.h {A4, A5, F5, D5 }
-
-
-
 #include "audio_deck.h"
 
 ////////////////////////////////////// DEFINES /////////////////////////////////
@@ -45,8 +39,6 @@
 #define N_MICS 4
 #define N_MOTORS 4
 
-#define BEEP_TIME_MS 500
-#define BEEP_PRESCALER -1 // will beep at rate AUDIO_TASK_FREQUENCY / 600 = 0.5 Hz
 
 // The maximum update rate we can expect at the ROS level is
 // AUDIO_TASK_FREQUENCY / TOTAL_N_PACKETS (currently 36+3=39), so:
@@ -109,8 +101,6 @@ static uint16_t delta_freq = 100;
 static uint16_t n_average = 1;
 static bool filter_prop_enable = false;
 static bool filter_snr_enable = false;
-
-uint8_t prescaler = 0;
 
 ////////////////////////////////////// CRTP COMMUNICATION /////////////////////////////////
 static enum {
@@ -238,28 +228,10 @@ bool exchange_data_audio_deck() {
 		memcpy(spi_rx_buffer, temp_spi_rx_buffer, SPI_N_BYTES);
 		return true;
 	}
-	//DEBUG_PRINT("%d %d %d ... %d %d \n", temp_spi_rx_buffer[0], temp_spi_rx_buffer[1], temp_spi_rx_buffer[2], temp_spi_rx_buffer[SPI_N_BYTES - 2], temp_spi_rx_buffer[SPI_N_BYTES - 1]);
 	return false;
 #endif
 }
 
-
-void generate_beep(void) {
-	motorsPlayTone(A4, BEEP_TIME_MS);
-
-	vTaskDelay(M2T(BEEP_TIME_MS));
-
-	/*
-	motorsBeep(MOTOR_M1, true, A4, 1);
-	vTaskDelay(M2T(BEEP_TIME_MS));
-	motorsBeep(MOTOR_M1, false, 0, 0);
-	*/
-
-	motorsBeep(MOTOR_M1, true, A4, (uint16_t)(MOTORS_TIM_BEEP_CLK_FREQ / A4)/ 20);
-	vTaskDelay(M2T(BEEP_TIME_MS));
-	motorsBeep(MOTOR_M1, false, 0, 0);
-
-}
 
 //////////////////////////// CRAZYFLIE FUNCTIONS  ////////////////////////////////////
 
@@ -271,6 +243,7 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 	spiBegin();
 
 	pinMode(SYNCH_PIN, OUTPUT);
+	pinMode(FLOW_PIN, INPUT);
 
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
 			AUDIO_TASK_PRI, NULL);
@@ -281,8 +254,6 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 bool audio_deckTest(void) { // deck test
 	if (!isInit)
 		return false;
-	//DEBUG_PRINT("AUDIO beeping... \n");
-	//generate_beep();
 	DEBUG_PRINT("AUDIO TEST_PASSED\n");
 	return true;
 }
@@ -315,14 +286,6 @@ void audio_deckTask(void *arg) { // main task
 		// warning if we have actually taken longer than allowed
 		// for one period.
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
-
-
-		prescaler += 1;
-		if (prescaler == BEEP_PRESCALER) {
-			DEBUG_PRINT("beeping \n");
-			generate_beep();
-			prescaler = 0;
-		}
 
 		// fill the parameter buffer with the current parameters,
 		// will stay constant throughout the sending of this
