@@ -34,7 +34,6 @@
 #define FLOAT_PRECISION 4// float32 = 4 bytes
 #define CRTP_MAX_PAYLOAD 29 // data bytes per crtp packet
 #define SYNCH_PIN DECK_GPIO_IO4
-#define FLOW_PIN DECK_GPIO_IO3
 #define FFTSIZE 32
 #define N_MICS 4
 #define N_MOTORS 4
@@ -211,9 +210,6 @@ bool exchange_data_audio_deck() {
 	memcpy(spi_rx_buffer[AUDIO_N_BYTES], frequencies, FBINS_N_BYTES);
 	return 1;
 #else
-	// FLOW_PIN is 0 while flowdeck is still being read. Make sure to wait until bus is free.
-	// Probably not necessary but doesn't hurt.
-	while (!digitalRead(FLOW_PIN)) {};
 
 	spiBeginTransaction(spi_speed);
 	digitalWrite(SYNCH_PIN, LOW);
@@ -243,7 +239,6 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 	spiBegin();
 
 	pinMode(SYNCH_PIN, OUTPUT);
-	pinMode(FLOW_PIN, INPUT);
 
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
 			AUDIO_TASK_PRI, NULL);
