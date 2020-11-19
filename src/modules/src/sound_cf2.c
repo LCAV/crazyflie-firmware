@@ -202,6 +202,7 @@ static Melody valkyries = {.bpm = 140, .delay = 1, .notes = {{Gb3, Q}, {B3, Q},
     {D4, Q}, {Gb4, Q}, {D4, S}, {Gb4, E}, {A4, Q}, {A3, Q}, {D4, Q}, {A3, S},
     {D4, E}, {Gb4, H},
     REPEAT}};
+static Melody sweep = {.bpm =30, .delay = 1, .notes = {{94, Q}, {234, Q}, {359, Q}, {500, Q}, {625, Q}, {766, Q}, {906, Q}, {1031, Q}, {1172, Q}, {1297, Q}, {1438, Q}, {1578, Q}, {1703, Q}, {1844, Q}, {1969, Q}, {2109, Q}, {2250, Q}, {2375, Q}, {2516, Q}, {2641, Q}, {2781, Q}, {2906, Q}, {3047, Q}, {3188, Q}, {3312, Q}, {3453, Q}, {3578, Q}, {3719, Q}, {3859, Q}, {3984, Q}, {4125, Q}, {4250, Q}, STOP}};
 
 typedef void (*BuzzerEffect)(uint32_t timer, uint32_t * mi, Melody * melody);
 
@@ -313,7 +314,8 @@ static EffectCall effects[] = {
     {.call = &melodyplayer, .melody = &valkyries},
     {.call = &bypass},
     {.call = &siren},
-    {.call = &tilt}
+    {.call = &tilt},
+    {.call = &melodyplayer, .melody = &sweep}
 };
 
 static xTimerHandle timer;
