@@ -81,6 +81,10 @@ static float     extBatCurrAmpPerVolt;
 static float    temp;
 #endif
 
+// Uncomment below to turn buzzer battery alarms back on (alarms are default behavior
+// but it was turned off for sound experiments)
+//#define BUZZER_ALARM
+
 static uint32_t batteryLowTimeStamp;
 static uint32_t batteryCriticalLowTimeStamp;
 static bool isInit;
@@ -335,25 +339,33 @@ void pmTask(void *param)
         case charged:
           ledseqStop(&seq_charging);
           ledseqRunBlocking(&seq_charged);
+#ifdef BUZZER_ALARM
           soundSetEffect(SND_BAT_FULL);
+#endif
           systemSetCanFly(false);
           break;
         case charging:
           ledseqStop(&seq_lowbat);
           ledseqStop(&seq_charged);
           ledseqRunBlocking(&seq_charging);
+#ifdef BUZZER_ALARM
           soundSetEffect(SND_USB_CONN);
+#endif
           systemSetCanFly(false);
           break;
         case lowPower:
           ledseqRunBlocking(&seq_lowbat);
+#ifdef BUZZER_ALARM
           soundSetEffect(SND_BAT_LOW);
+#endif
           systemSetCanFly(true);
           break;
         case battery:
           ledseqRunBlocking(&seq_charging);
           ledseqRun(&seq_charged);
+#ifdef BUZZER_ALARM
           soundSetEffect(SND_USB_DISC);
+#endif
           systemSetCanFly(true);
           break;
         default:
