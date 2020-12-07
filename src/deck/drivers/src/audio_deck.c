@@ -55,7 +55,7 @@
 // new audio data ca. every 50ms, corresponding to 20Hz. Also, setting
 // the rate to this maximum would mean there is no time left to do
 // anything else, so it is not desirable.
-#define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 200 // frequency at which packets are sent [Hz]
 
 // buffer sizes
 // parameters include: current thrusts and min_freq, max_freq, delta_freq, n_average, snr, propeller: total 6 
@@ -86,12 +86,15 @@
 #endif
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
+static TaskHandle_t audio_taskHandle;
+static TaskHandle_t audio_taskHandle_new;
 
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
 static bool send_audio_enable = false; // enables the sending of CRTP packets with the audio data
 static bool new_data_to_send = false;
+static bool restart = false; // enables the sending of CRTP packets with the audio data
 
 // frequency selection parameters
 static uint16_t min_freq = 0;
@@ -100,6 +103,7 @@ static uint16_t delta_freq = 100;
 static uint16_t n_average = 1;
 static bool filter_prop_enable = false;
 static bool filter_snr_enable = false;
+static uint16_t motor_power_list[N_MOTORS];
 
 ////////////////////////////////////// CRTP COMMUNICATION /////////////////////////////////
 static enum {
@@ -129,24 +133,20 @@ uint8_t send_audio_packet(uint8_t channel) {
 		memcpy(signal_array_p.data, &crtp_tx_buffer[packet_count_audio * CRTP_MAX_PAYLOAD], AUDIO_N_BYTES % CRTP_MAX_PAYLOAD);
 
 		if (crtpSendPacket(&signal_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("errQUEUE_FULL audio packet %d\n", packet_count_audio);
-			return 0;
+			DEBUG_PRINT("Warning: errQUEUE_FULL audio packet %d\n", packet_count_audio);
 		}
-		else {
-			packet_count_audio = 0;
-			return 1;
-		}
+
+		packet_count_audio = 0;
+		return 1;
 	} else { // send full packet
 		memcpy(signal_array_p.data, &crtp_tx_buffer[packet_count_audio * CRTP_MAX_PAYLOAD], CRTP_MAX_PAYLOAD);
 
 		if (crtpSendPacket(&signal_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("errQUEUE_FULL audio packet %d\n", packet_count_audio);
-			return 0;
+			DEBUG_PRINT("Warning: errQUEUE_FULL audio packet %d\n", packet_count_audio);
 		}
-		else {
-			packet_count_audio++;
-			return 0;
-		}
+
+		packet_count_audio++;
+		return 0;
 	}
 }
 
@@ -159,35 +159,27 @@ uint8_t send_fbin_packet() {
 		memcpy(fbin_array_p.data, &crtp_tx_buffer[AUDIO_N_BYTES + packet_count_fbins * CRTP_MAX_PAYLOAD], FBINS_N_BYTES % CRTP_MAX_PAYLOAD);
 
 		if (crtpSendPacket(&fbin_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
-			return 0;
+			DEBUG_PRINT("Warning: errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
 		}
-		else {
-			packet_count_fbins = 0;
-			return 1;
-		}
+
+		packet_count_fbins = 0;
+		return 1;
 	} else { // send full packet
 		memcpy(fbin_array_p.data, &crtp_tx_buffer[AUDIO_N_BYTES + packet_count_fbins * CRTP_MAX_PAYLOAD], CRTP_MAX_PAYLOAD);
 
 		if (crtpSendPacket(&fbin_array_p) == errQUEUE_FULL) {
-			DEBUG_PRINT("errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
-			return 0;
+			DEBUG_PRINT("Warning: errQUEUE_FULL fbins packet %d\n", packet_count_fbins);
 		}
-		else {
-			packet_count_fbins++;
-			return 0;
-		}
+
+		packet_count_fbins++;
+		return 0;
 	}
 }
 
 
 void fill_param_buffer() {
-	if (filter_prop_enable) {
-		uint16_t *motorPower_p = get_motor_power();
-		memcpy(param_buffer_uint16, motorPower_p, N_MOTORS*2);
-	} else {
-		memset(param_buffer_uint16, 0x00, N_MOTORS*2);
-	}
+	get_motor_power(&motor_power_list[0]);
+	memcpy(&param_buffer_uint16[0], &motor_power_list[0], N_MOTORS*INT16_PRECISION);
 
 	param_buffer_uint16[N_MOTORS] = min_freq;
 	param_buffer_uint16[N_MOTORS + 1] = max_freq;
@@ -231,6 +223,7 @@ bool exchange_data_audio_deck() {
 
 //////////////////////////// CRAZYFLIE FUNCTIONS  ////////////////////////////////////
 
+
 void audio_deckInit(DeckInfo *info) { // deck initialisation
 	if (isInit)
 		return;
@@ -239,9 +232,8 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 	spiBegin();
 
 	pinMode(SYNCH_PIN, OUTPUT);
-
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
-			AUDIO_TASK_PRI, NULL);
+			AUDIO_TASK_PRI, &audio_taskHandle);
 
 	isInit = true;
 }
@@ -253,6 +245,15 @@ bool audio_deckTest(void) { // deck test
 	return true;
 }
 
+void audio_deckRestart() {
+	DEBUG_PRINT("create new task...\n");
+	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
+			AUDIO_TASK_PRI, &audio_taskHandle_new);
+	DEBUG_PRINT("delete old task...\n");
+	vTaskDelete(audio_taskHandle);
+	audio_taskHandle = audio_taskHandle_new;
+}
+
 void audio_deckTask(void *arg) { // main task
 	systemWaitStart();
 	TickType_t xLastWakeTime;
@@ -261,7 +262,7 @@ void audio_deckTask(void *arg) { // main task
 
 	memset(spi_tx_buffer, 0x00, SPI_N_BYTES);
 	memset(spi_rx_buffer, 0x00, SPI_N_BYTES);
-
+	memset(motor_power_list, 0x00, N_MOTORS*INT16_PRECISION);
 	fill_param_buffer();
 
 
@@ -277,14 +278,19 @@ void audio_deckTask(void *arg) { // main task
 	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 
 	while (1) {
+
+		if (restart) {
+			restart = false;
+			audio_deckRestart();
+		}
+
 		// Note that we only delay if necessary, and there is no
 		// warning if we have actually taken longer than allowed
 		// for one period.
 		vTaskDelayUntil(&xLastWakeTime, F2T(AUDIO_TASK_FREQUENCY));
 
-		// fill the parameter buffer with the current parameters,
-		// will stay constant throughout the sending of this
-		// audio packet.
+		// fill the parameter buffer with the current parameters, to be sent
+		// to audio deck.
 		fill_param_buffer();
 
 #ifdef DEBUG_SPI
@@ -298,6 +304,8 @@ void audio_deckTask(void *arg) { // main task
 		}
 #else
 		memcpy(spi_tx_buffer, (uint8_t*) param_buffer_uint16, PARAM_N_BYTES);
+
+		// send parameters from audio deck and receive new parameters.
 		new_data_to_send = exchange_data_audio_deck();
 #endif
 
@@ -307,7 +315,7 @@ void audio_deckTask(void *arg) { // main task
 
 				//DEBUG_PRINT("Start sending one chunk of audio data... \n");
 
-				// fill the crtp_tx_buffer with what we have received so far
+				// fill the crtp_tx_buffer with what we have received
 				memcpy(crtp_tx_buffer, spi_rx_buffer, SPI_N_BYTES);
 				new_data_to_send = false;
 
@@ -315,7 +323,8 @@ void audio_deckTask(void *arg) { // main task
 				state = SEND_FOLLOWING_PACKET;
 			}
 			else if (send_audio_enable) {
-				DEBUG_PRINT("Want to send new data but don't have any!\n");
+				DEBUG_PRINT("Want to send new data but don't have any! Restarting...\n");
+				audio_deckRestart();
 			}
 		} else if (state == SEND_FOLLOWING_PACKET) {
 			if(send_audio_packet(0)){
@@ -343,10 +352,15 @@ LOG_GROUP_START(audio)
 LOG_ADD(LOG_UINT8, send_audio_enable, &send_audio_enable)
 LOG_ADD(LOG_UINT8, new_data_to_send, &new_data_to_send)
 LOG_ADD(LOG_UINT8, first_element, &spi_rx_buffer[0])
+LOG_ADD(LOG_UINT16, m1_thrust, &motor_power_list[0])
+LOG_ADD(LOG_UINT16, m2_thrust, &motor_power_list[1])
+LOG_ADD(LOG_UINT16, m3_thrust, &motor_power_list[2])
+LOG_ADD(LOG_UINT16, m4_thrust, &motor_power_list[3])
 LOG_GROUP_STOP(audio)
 
 
 PARAM_GROUP_START(audio)
+PARAM_ADD(PARAM_UINT8, restart, &restart)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)

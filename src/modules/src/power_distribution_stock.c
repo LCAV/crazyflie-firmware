@@ -130,9 +130,7 @@ void powerDistribution(const control_t *control)
   }
 }
 
-uint16_t * get_motor_power(void){
-    static uint16_t motorPower_array[4];
-
+void get_motor_power(uint16_t * motorPower_array){
     if (motorSetEnable)
     {
         motorPower_array[0] = motorPowerSet.m1;
@@ -147,8 +145,8 @@ uint16_t * get_motor_power(void){
         motorPower_array[2] = motorPower.m3;
         motorPower_array[3] = motorPower.m4;
     }
-    return motorPower_array;
 }
+
 PARAM_GROUP_START(motorPowerSet)
 PARAM_ADD(PARAM_UINT8, enable, &motorSetEnable)
 PARAM_ADD(PARAM_UINT16, m1, &motorPowerSet.m1)
