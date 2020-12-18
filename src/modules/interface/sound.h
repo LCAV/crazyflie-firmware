@@ -55,9 +55,9 @@ bool soundTest(void);
 void soundSetEffect(uint32_t effect);
 
 /**
- * Manufally set a frequency that should be played by the sound syb-system.
+ * Get currently played frequency.
  */
-void soundSetFreq(uint32_t freq);
+uint16_t soundGetFreq(void);
 
 #endif /* __SOUND_H__ */
 

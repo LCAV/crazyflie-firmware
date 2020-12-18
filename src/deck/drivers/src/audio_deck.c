@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <math.h>
 #include "stm32fxxx.h"
 #include "system.h"
 #include "FreeRTOS.h"
@@ -17,6 +18,7 @@
 #include "usec_time.h"
 #include "power_distribution.h"
 #include "motors.h"
+#include "sound.h"
 
 #include "audio_deck.h"
 
@@ -37,6 +39,8 @@
 #define FFTSIZE 32
 #define N_MICS 4
 #define N_MOTORS 4
+#define FS 32000
+#define N_BUFFER 2048
 
 
 // The maximum update rate we can expect at the ROS level is
@@ -55,11 +59,11 @@
 // new audio data ca. every 50ms, corresponding to 20Hz. Also, setting
 // the rate to this maximum would mean there is no time left to do
 // anything else, so it is not desirable.
-#define AUDIO_TASK_FREQUENCY 200 // frequency at which packets are sent [Hz]
+#define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
 
 // buffer sizes
-// parameters include: current thrusts and min_freq, max_freq, delta_freq, n_average, snr, propeller: total 6 
-#define PARAM_N_INTS (N_MOTORS + 6) 
+// parameters include: current thrusts and min_freq, max_freq, buzzer_freq_idx, delta_freq, n_average, snr, propeller: total 7
+#define PARAM_N_INTS (N_MOTORS + 7)
 #define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION) // 14 bytes
 
 #define AUDIO_N_FLOATS (N_MICS * FFTSIZE * 2) // *2 for complex numbers
@@ -99,10 +103,11 @@ static bool restart = false; // enables the sending of CRTP packets with the aud
 // frequency selection parameters
 static uint16_t min_freq = 0;
 static uint16_t max_freq = 0;
+static uint16_t buzzer_freq_idx = 0;
 static uint16_t delta_freq = 100;
 static uint16_t n_average = 1;
 static bool filter_prop_enable = false;
-static bool filter_snr_enable = false;
+static uint16_t filter_snr_enable = 0;
 static uint16_t motor_power_list[N_MOTORS];
 
 ////////////////////////////////////// CRTP COMMUNICATION /////////////////////////////////
@@ -181,12 +186,15 @@ void fill_param_buffer() {
 	get_motor_power(&motor_power_list[0]);
 	memcpy(&param_buffer_uint16[0], &motor_power_list[0], N_MOTORS*INT16_PRECISION);
 
+	buzzer_freq_idx = (uint16_t) round((float) N_BUFFER * soundGetFreq() / FS );
+
 	param_buffer_uint16[N_MOTORS] = min_freq;
 	param_buffer_uint16[N_MOTORS + 1] = max_freq;
-	param_buffer_uint16[N_MOTORS + 2] = delta_freq;
-	param_buffer_uint16[N_MOTORS + 3] = n_average;
-	param_buffer_uint16[N_MOTORS + 4] = filter_prop_enable;
-	param_buffer_uint16[N_MOTORS + 5] = filter_snr_enable;
+	param_buffer_uint16[N_MOTORS + 2] = buzzer_freq_idx;
+	param_buffer_uint16[N_MOTORS + 3] = delta_freq;
+	param_buffer_uint16[N_MOTORS + 4] = n_average;
+	param_buffer_uint16[N_MOTORS + 5] = filter_prop_enable;
+	param_buffer_uint16[N_MOTORS + 6] = filter_snr_enable;
 
 }
 
