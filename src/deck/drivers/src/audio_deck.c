@@ -91,14 +91,12 @@
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
 static TaskHandle_t audio_taskHandle;
-static TaskHandle_t audio_taskHandle_new;
 
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
 // general parameter
 static bool send_audio_enable = false; // enables the sending of CRTP packets with the audio data
 static bool new_data_to_send = false;
-static bool restart = false; // enables the sending of CRTP packets with the audio data
 
 // frequency selection parameters
 static uint16_t min_freq = 0;
@@ -253,15 +251,6 @@ bool audio_deckTest(void) { // deck test
 	return true;
 }
 
-void audio_deckRestart() {
-	DEBUG_PRINT("create new task...\n");
-	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
-			AUDIO_TASK_PRI, &audio_taskHandle_new);
-	DEBUG_PRINT("delete old task...\n");
-	vTaskDelete(audio_taskHandle);
-	audio_taskHandle = audio_taskHandle_new;
-}
-
 void audio_deckTask(void *arg) { // main task
 	systemWaitStart();
 	TickType_t xLastWakeTime;
@@ -286,11 +275,6 @@ void audio_deckTask(void *arg) { // main task
 	spi_tx_buffer[SPI_N_BYTES - 1] = CHECKSUM_VALUE;
 
 	while (1) {
-
-		if (restart) {
-			restart = false;
-			audio_deckRestart();
-		}
 
 		// Note that we only delay if necessary, and there is no
 		// warning if we have actually taken longer than allowed
@@ -317,6 +301,12 @@ void audio_deckTask(void *arg) { // main task
 		new_data_to_send = exchange_data_audio_deck();
 #endif
 
+		if (!send_audio_enable) {
+			state = SEND_FIRST_PACKET;
+			packet_count_fbins = 0;
+			packet_count_audio = 0;
+		}
+
 		// send audio data over CRTP
 		if (state == SEND_FIRST_PACKET) {
 			if (send_audio_enable && new_data_to_send) {
@@ -331,8 +321,7 @@ void audio_deckTask(void *arg) { // main task
 				state = SEND_FOLLOWING_PACKET;
 			}
 			else if (send_audio_enable) {
-				DEBUG_PRINT("Want to send new data but don't have any! Restarting...\n");
-				audio_deckRestart();
+				DEBUG_PRINT("Want to send new data but don't have any! \n");
 			}
 		} else if (state == SEND_FOLLOWING_PACKET) {
 			if(send_audio_packet(0)){
@@ -368,7 +357,6 @@ LOG_GROUP_STOP(audio)
 
 
 PARAM_GROUP_START(audio)
-PARAM_ADD(PARAM_UINT8, restart, &restart)
 PARAM_ADD(PARAM_UINT8, send_audio_enable, &send_audio_enable)
 PARAM_ADD(PARAM_UINT16, min_freq, &min_freq)
 PARAM_ADD(PARAM_UINT16, max_freq, &max_freq)
