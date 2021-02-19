@@ -62,8 +62,8 @@
 #define AUDIO_TASK_FREQUENCY 300 // frequency at which packets are sent [Hz]
 
 // buffer sizes
-// parameters include: current thrusts and min_freq, max_freq, buzzer_freq_idx, delta_freq, n_average, snr, propeller: total 7
-#define PARAM_N_INTS (N_MOTORS + 7)
+// parameters include: current thrusts and min_freq, max_freq, buzzer_freq_idx, delta_freq, n_average, snr, propeller, window_type: total 8
+#define PARAM_N_INTS (N_MOTORS + 8)
 #define PARAM_N_BYTES (PARAM_N_INTS * INT16_PRECISION) // 14 bytes
 
 #define AUDIO_N_FLOATS (N_MICS * FFTSIZE * 2) // *2 for complex numbers
@@ -106,6 +106,7 @@ static uint16_t delta_freq = 100;
 static uint16_t n_average = 1;
 static bool filter_prop_enable = false;
 static uint16_t filter_snr_enable = 0;
+static uint16_t window_type = 1; // 0: none, 1: hann, 2: flattop, 3: tukey(0.2)
 static uint16_t motor_power_list[N_MOTORS];
 
 ////////////////////////////////////// CRTP COMMUNICATION /////////////////////////////////
@@ -193,6 +194,7 @@ void fill_param_buffer() {
 	param_buffer_uint16[N_MOTORS + 4] = n_average;
 	param_buffer_uint16[N_MOTORS + 5] = filter_prop_enable;
 	param_buffer_uint16[N_MOTORS + 6] = filter_snr_enable;
+	param_buffer_uint16[N_MOTORS + 7] = window_type;
 
 }
 
@@ -364,4 +366,5 @@ PARAM_ADD(PARAM_UINT16, delta_freq, &delta_freq)
 PARAM_ADD(PARAM_UINT16, n_average, &n_average)
 PARAM_ADD(PARAM_UINT8, filter_prop_enable, &filter_prop_enable)
 PARAM_ADD(PARAM_UINT8, filter_snr_enable, &filter_snr_enable)
+PARAM_ADD(PARAM_UINT8, window_type, &window_type)
 PARAM_GROUP_STOP(audio)
