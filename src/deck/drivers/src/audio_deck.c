@@ -90,7 +90,6 @@
 #endif
 ///////////////////////////////////////// GENERAL    ////////////////////////////////////
 static bool isInit;
-static TaskHandle_t audio_taskHandle;
 
 ///////////////////////////////////////// PARAMETERS ////////////////////////////////////
 
@@ -241,7 +240,7 @@ void audio_deckInit(DeckInfo *info) { // deck initialisation
 
 	pinMode(SYNCH_PIN, OUTPUT);
 	xTaskCreate(audio_deckTask, AUDIO_TASK_NAME, AUDIO_TASK_STACKSIZE, NULL,
-			AUDIO_TASK_PRI, &audio_taskHandle);
+			AUDIO_TASK_PRI, NULL);
 
 	isInit = true;
 }
