@@ -339,7 +339,7 @@ void audio_deckTask(void *arg) { // main task
 }
 
 static const DeckDriver audio_deck = {
-		.vid = 0xBC, .pid = 0xFF, // write here id for detection of the board
+		.vid = 0xBC, .pid = 0xFF,
 		.name = "audio_deck", .usedGpio = DECK_USING_SDA | DECK_USING_SCL,
 		.init = audio_deckInit, .test = audio_deckTest, };
 
